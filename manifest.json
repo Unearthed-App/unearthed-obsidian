@@ -4,8 +4,8 @@
 	"version": "1.0.2",
 	"minAppVersion": "0.15.0",
 	"description": "Auto Sync Kindle Highlights via Unearthed",
-	"author": "Unearthed",
-	"authorUrl": "https://unearthed.app",
+	"author": "CheersCal",
+	"authorUrl": "https://github.com/cheerscal",
 	"fundingUrl": "https://unearthed.app",
 	"isDesktopOnly": false
 }
