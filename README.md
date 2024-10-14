@@ -13,7 +13,12 @@ Currently, we support syncing with:
 
 We're excited to expand support to more sources and offer additional integrations in the future.
 
-The **Daily Reflection** feature will also be added to this Obsidian plugin at some point.
+## Daily Reflection
+![image](https://github.com/user-attachments/assets/e0bb8af3-1d8c-4037-a38a-89a339b371f4)
+
+## All Quotes and Notes Synced
+![image](https://github.com/user-attachments/assets/50bd5fc9-c13e-4c8c-86db-ddba0a88a4cd)
+
 
 ## How to Sync Your Kindle Books with Obsidian
 
