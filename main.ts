@@ -5,6 +5,7 @@ import {
 	Setting,
 	Plugin,
 	TFile,
+	requestUrl,
 } from "obsidian";
 
 interface UnearthedSettings {
@@ -109,19 +110,16 @@ async function syncData(plugin: Unearthed) {
 async function fetchSources(plugin: Unearthed) {
 	const settings = plugin.settings;
 
-	const response = await fetch(
-		"https://unearthed.app/api/public/obsidian-sync",
-		{
-			method: "GET",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${settings.unearthedApiKey}`,
-			},
-		}
-	);
+	const response = await requestUrl({
+		url: "https://unearthed.app/api/public/obsidian-sync",
+		method: "GET",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${settings.unearthedApiKey}`,
+		},
+	});
 
-	const data = await response.json();
-	return data;
+	return response.json;
 }
 
 async function applyData(plugin: Unearthed, data: UnearthedData[]) {
@@ -296,16 +294,15 @@ async function appendToDailyNote(
 
 	if (!content.includes("## Daily Reflection")) {
 		content += reflectionContent;
-		await plugin.app.vault.modify(file as TFile, content);
-	} else {
-		console.log("Daily Reflection section already exists in the note.");
+		await plugin.app.vault.modify(file, content);
 	}
 }
 
 async function fetchDailyReflection(plugin: Unearthed) {
 	const settings = plugin.settings;
 
-	const response = await fetch("https://unearthed.app/api/public/get-daily", {
+	const response = await requestUrl({
+		url: "https://unearthed.app/api/public/get-daily",
 		method: "GET",
 		headers: {
 			"Content-Type": "application/json",
@@ -313,7 +310,7 @@ async function fetchDailyReflection(plugin: Unearthed) {
 		},
 	});
 
-	const { data } = await response.json();
+	const { data } = response.json;
 
 	if (!data || !data.dailyReflection || typeof data === "undefined") {
 		return false;
