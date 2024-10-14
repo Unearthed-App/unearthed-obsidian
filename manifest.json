@@ -1,6 +1,6 @@
 {
 	"id": "unearthed-app",
-	"name": "Unearthed",
+	"name": "Unearthed (Kindle Sync)",
 	"version": "1.0.3",
 	"minAppVersion": "0.15.0",
 	"description": "Auto Sync Kindle Highlights and Daily Reflection via Unearthed",
