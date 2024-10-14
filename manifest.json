@@ -1,9 +1,9 @@
 {
 	"id": "unearthed-app",
 	"name": "Unearthed",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"minAppVersion": "0.15.0",
-	"description": "Auto Sync Kindle Highlights via Unearthed",
+	"description": "Auto Sync Kindle Highlights and Daily Reflection via Unearthed",
 	"author": "CheersCal",
 	"authorUrl": "https://github.com/cheerscal",
 	"fundingUrl": "https://unearthed.app",

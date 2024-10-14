@@ -10,11 +10,17 @@ import {
 interface UnearthedSettings {
 	unearthedApiKey: string;
 	autoSync: boolean;
+	dailyReflectionDateFormat: string;
+	dailyReflectionLocation: string;
+	addDailyReflection: boolean;
 }
 
 const DEFAULT_SETTINGS: UnearthedSettings = {
 	unearthedApiKey: "",
 	autoSync: false,
+	dailyReflectionDateFormat: "YYYY-MM-DD",
+	dailyReflectionLocation: "Daily Notes",
+	addDailyReflection: false,
 };
 interface UnearthedData {
 	id: string;
@@ -53,6 +59,10 @@ export default class Unearthed extends Plugin {
 				new Notice("Unearthed Sync started, please wait...");
 				await syncData(this);
 				new Notice("Unearthed Sync complete");
+			}
+
+			if (this.settings.addDailyReflection) {
+				await getAndAppendDailyReflection(this);
 			}
 		});
 
@@ -123,7 +133,7 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		}
 	} catch (error) {
 		console.log(
-			`Error creating folder: ${parentFolderPath} - ${error.message}`
+			`No folder created: ${parentFolderPath} - ${error.message}`
 		);
 	}
 
@@ -144,11 +154,11 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 			if (!plugin.app.vault.getAbstractFileByPath(folderPath)) {
 				await plugin.app.vault.createFolder(folderPath);
 			} else {
-				console.log(`Folder already exists: ${folderPath}`);
+				console.log(`No folder created: ${folderPath}`);
 			}
 		} catch (error) {
 			console.log(
-				`Error creating folder: ${parentFolderPath} - ${error.message}`
+				`No folder created: ${parentFolderPath} - ${error.message}`
 			);
 		}
 	}
@@ -208,6 +218,116 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 	}
 }
 
+function formatDate(date: Date, format: string): string {
+	const pad = (n: number): string => (n < 10 ? `0${n}` : n.toString());
+	const map: { [key: string]: string } = {
+		YYYY: date.getFullYear().toString(),
+		MM: pad(date.getMonth() + 1),
+		DD: pad(date.getDate()),
+		HH: pad(date.getHours()),
+		mm: pad(date.getMinutes()),
+		ss: pad(date.getSeconds()),
+	};
+
+	return format.replace(/YYYY|MM|DD|HH|mm|ss/g, (matched) => map[matched]);
+}
+
+async function getAndAppendDailyReflection(plugin: Unearthed) {
+	if (!plugin.settings.dailyReflectionLocation) {
+		new Notice("Please specify a Daily Note folder location");
+		return;
+	}
+
+	if (!plugin.settings.dailyReflectionDateFormat) {
+		new Notice("Please specify a Daily Note date format");
+		return;
+	}
+
+	const dailyReflection = await fetchDailyReflection(plugin);
+	const formattedDate = formatDate(
+		new Date(),
+		plugin.settings.dailyReflectionDateFormat
+	);
+	const filePath = `${plugin.settings.dailyReflectionLocation}/${formattedDate}.md`;
+
+	try {
+		await appendToDailyNote(plugin, filePath, dailyReflection);
+		new Notice("Daily reflection added successfully");
+	} catch (error) {
+		console.error("Error appending daily reflection:", error);
+		new Notice("Failed to add daily reflection");
+	}
+}
+
+async function appendToDailyNote(
+	plugin: Unearthed,
+	filePath: string,
+	reflection: any
+) {
+	const file = plugin.app.vault.getAbstractFileByPath(filePath);
+	let content = "";
+
+	if (file instanceof TFile) {
+		content = await plugin.app.vault.read(file);
+	} else {
+		new Notice("Daily note does not exist");
+		return;
+	}
+
+	const reflectionContent = `
+---
+## Daily Reflection
+
+> "${reflection.quote}"
+
+**Book:** [[${reflection.book}]]
+**Author:** [[${reflection.author}]]
+**Location:** ${reflection.location}
+
+**Note:** ${reflection.note}
+
+---
+`;
+
+	if (!content.includes("## Daily Reflection")) {
+		content += reflectionContent;
+		await plugin.app.vault.modify(file as TFile, content);
+	} else {
+		console.log("Daily Reflection section already exists in the note.");
+	}
+}
+
+async function fetchDailyReflection(plugin: Unearthed) {
+	const settings = plugin.settings;
+
+	const response = await fetch(
+		"http://localhost:3000/api/public/get-daily",
+		// "https://unearthed.app/api/public/get-daily",
+		{
+			method: "GET",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${settings.unearthedApiKey}`,
+			},
+		}
+	);
+
+	const { data } = await response.json();
+	console.log("SDFGSDFGDFGDFG", data);
+
+	if (!data || !data.dailyReflection) {
+		return {};
+	}
+
+	return {
+		book: data.dailyReflection.source.title,
+		author:	data.dailyReflection.source.author,
+		quote: data.dailyReflection.quote.content,
+		note: data.dailyReflection.quote.note,
+		location: data.dailyReflection.quote.location,
+	};
+}
+
 function extractExistingQuotes(fileContent: string): string[] {
 	const quoteRegex = />\s(.+?)\n/g;
 	const quotes = [];
@@ -217,7 +337,6 @@ function extractExistingQuotes(fileContent: string): string[] {
 	}
 	return quotes;
 }
-
 
 class UnearthedSettingTab extends PluginSettingTab {
 	plugin: Unearthed;
@@ -258,6 +377,52 @@ class UnearthedSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Add Daily Reflection to Daily note on startup")
+			.setDesc(
+				"Automatically add a Daily Reflection section to your Daily note when Obsidian starts"
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.addDailyReflection)
+					.onChange(async (value) => {
+						this.plugin.settings.addDailyReflection = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Daily Reflection (Date Format)")
+			.setDesc(
+				"The format of the daily note file name. You can copy this from the Core->Daily notes plugin settings"
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("YYYY-MM-DD")
+					.setValue(this.plugin.settings.dailyReflectionDateFormat)
+					.onChange(async (value) => {
+						this.plugin.settings.dailyReflectionDateFormat = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Daily Reflection (New file location)")
+			.setDesc(
+				"The folder of your Daily notes. You can copy this from the Core->Daily notes plugin settings."
+			)
+			.addSearch((cb) => {
+				cb.setPlaceholder("Example: Daily Notes/")
+					.setValue(this.plugin.settings.dailyReflectionLocation)
+					.onChange(async (newFolder) => {
+						this.plugin.settings.dailyReflectionLocation =
+							newFolder;
+						await this.plugin.saveSettings();
+					});
+				cb.inputEl.type = "text";
+				cb.inputEl.setAttribute("data-type", "folder");
+			});
+
+		new Setting(containerEl)
 			.setName("Manual Sync")
 			.setDesc("Manually trigger a sync")
 			.addButton((button) =>
@@ -265,6 +430,17 @@ class UnearthedSettingTab extends PluginSettingTab {
 					new Notice("Unearthed Sync started, please wait...");
 					await syncData(this.plugin);
 					new Notice("Unearthed Sync complete");
+				})
+			);
+		new Setting(containerEl)
+			.setName("Manual Daily Reflection Sync")
+			.setDesc("Manually trigger a sync for the Daily Reflection")
+			.addButton((button) =>
+				button.setButtonText("Sync").onClick(async () => {
+					new Notice("Unearthed Sync started, please wait...");
+					await getAndAppendDailyReflection(this.plugin);
+					new Notice("Complete - check your daily note");
+
 				})
 			);
 	}

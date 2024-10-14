@@ -1,7 +1,7 @@
 {
 	"name": "unearthed-app-plugin",
-	"version": "1.0.2",
-	"description": "Auto Sync Kindle Highlights via Unearthed (https://unearthed.app)",
+	"version": "1.0.3",
+	"description": "Auto Sync Kindle Highlights and Daily Reflection via Unearthed (https://unearthed.app)",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",

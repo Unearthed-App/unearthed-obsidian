@@ -1,6 +1,7 @@
 # Unearthed Obsidian Plugin (Kindle Sync)
 
-Unearthed.app is a free service that seamlessly syncs your Kindle highlights and notes to your preferred platforms. 
+Unearthed.app is a free service that seamlessly syncs your Kindle highlights and notes to your preferred platforms.
+A **Daily Reflection** is served to you that consists of a quote, your note, book, author and location.
 
 Currently, we support syncing with:
 - **Obsidian** (via this plugin)
