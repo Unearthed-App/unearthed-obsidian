@@ -244,6 +244,11 @@ async function getAndAppendDailyReflection(plugin: Unearthed) {
 	}
 
 	const dailyReflection = await fetchDailyReflection(plugin);
+
+	if (!dailyReflection) {
+		return;
+	}
+
 	const formattedDate = formatDate(
 		new Date(),
 		plugin.settings.dailyReflectionDateFormat
@@ -300,28 +305,23 @@ async function appendToDailyNote(
 async function fetchDailyReflection(plugin: Unearthed) {
 	const settings = plugin.settings;
 
-	const response = await fetch(
-		"http://localhost:3000/api/public/get-daily",
-		// "https://unearthed.app/api/public/get-daily",
-		{
-			method: "GET",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${settings.unearthedApiKey}`,
-			},
-		}
-	);
+	const response = await fetch("https://unearthed.app/api/public/get-daily", {
+		method: "GET",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${settings.unearthedApiKey}`,
+		},
+	});
 
 	const { data } = await response.json();
-	console.log("SDFGSDFGDFGDFG", data);
 
-	if (!data || !data.dailyReflection) {
-		return {};
+	if (!data || !data.dailyReflection || typeof data === "undefined") {
+		return false;
 	}
 
 	return {
 		book: data.dailyReflection.source.title,
-		author:	data.dailyReflection.source.author,
+		author: data.dailyReflection.source.author,
 		quote: data.dailyReflection.quote.content,
 		note: data.dailyReflection.quote.note,
 		location: data.dailyReflection.quote.location,
@@ -440,7 +440,6 @@ class UnearthedSettingTab extends PluginSettingTab {
 					new Notice("Unearthed Sync started, please wait...");
 					await getAndAppendDailyReflection(this.plugin);
 					new Notice("Complete - check your daily note");
-
 				})
 			);
 	}
