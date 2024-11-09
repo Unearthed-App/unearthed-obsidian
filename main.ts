@@ -361,7 +361,7 @@ class UnearthedSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Auto Sync")
+			.setName("Auto sync")
 			.setDesc("Begin the sync process every time obsidian is loaded")
 			.addToggle((toggle) =>
 				toggle
