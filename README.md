@@ -11,7 +11,10 @@ Currently, we support syncing with:
 
 **Important**: Only the books visible in your Kindle notebook at [Amazon Kindle Notebook](https://read.amazon.com/notebook) will be synced.
 
-We're excited to expand support to more sources and offer additional integrations in the future.
+Looking to expand support to more sources and offer additional integrations in the future.
+
+## Video Tutorial
+[![Video Tutorial](https://img.youtube.com/vi/W321i9cjQms/maxresdefault.jpg)](https://www.youtube.com/watch?v=W321i9cjQms)
 
 ## Daily Reflection
 ![image](https://github.com/user-attachments/assets/e0bb8af3-1d8c-4037-a38a-89a339b371f4)
