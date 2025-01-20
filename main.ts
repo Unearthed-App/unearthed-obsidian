@@ -274,28 +274,28 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 
 		if (plugin.settings.quoteTemplate) {
 			for (const quote of item.quotes) {
-				let gotTempalte = template;
+				let gotTemplate = template;
 
 				const hiddenContent = `${HIDDEN_CHAR}${quote.content}${HIDDEN_CHAR}`;
 
 				if (!existingQuotes.includes(quote.content)) {
-					gotTempalte = gotTempalte.replace(
+					gotTemplate = gotTemplate.replace(
 						"{{content}}",
 						hiddenContent
 					);
 					if (quote.note) {
-						gotTempalte = gotTempalte.replace(
+						gotTemplate = gotTemplate.replace(
 							"{{note}}",
 							quote.note
 						);
 					} else {
-						gotTempalte = gotTempalte.replace("{{note}}", "");
+						gotTemplate = gotTemplate.replace("{{note}}", "");
 					}
-					gotTempalte = gotTempalte.replace(
+					gotTemplate = gotTemplate.replace(
 						"{{location}}",
 						quote.location
 					);
-					updatedFileContent += "\n" + gotTempalte;
+					updatedFileContent += "\n" + gotTemplate;
 				}
 			}
 		} else {
