@@ -16,6 +16,7 @@ interface UnearthedSettings {
 	dailyReflectionLocation: string;
 	addDailyReflection: boolean;
 	quoteTemplate: string;
+	sourceTemplate: string;
 }
 
 const QUOTE_TEMPLATE_EXAMPLE = `
@@ -26,6 +27,19 @@ const QUOTE_TEMPLATE_EXAMPLE = `
 **Location:** {{location}}
 `;
 
+const SOURCE_TEMPLATE_OPTIONS = [
+	"title",
+	"subtitle",
+	"author",
+	"type",
+	"origin",
+	"asin",
+	"ignored",
+	"createdAt",
+];
+
+const HIDDEN_CHAR = "\u200B";
+
 const DEFAULT_SETTINGS: UnearthedSettings = {
 	unearthedApiKey: "",
 	autoSync: false,
@@ -33,6 +47,7 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	dailyReflectionLocation: "Daily Notes",
 	addDailyReflection: false,
 	quoteTemplate: "",
+	sourceTemplate: "",
 };
 interface UnearthedData {
 	id: string;
@@ -45,6 +60,7 @@ interface UnearthedData {
 	userId: string;
 	ignored: boolean;
 	createdAt: string;
+	asin: string;
 	quotes: UnearthedQuote[];
 }
 
@@ -190,9 +206,22 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		)}s/`;
 		const fileName = toSafeFileName(`${item.title}.md`);
 		const filePath = `${folderPath}${fileName}`;
-		const fileContent = `# ${item.title}\n\n**Author:** [[${
+
+		let fileContent = `# ${item.title}\n\n**Author:** [[${
 			item.author
 		}]]\n\n**Source:** ${firstLetterUppercase(item.origin)}\n\n`;
+
+		if (plugin.settings.sourceTemplate) {
+			fileContent = plugin.settings.sourceTemplate
+				.replace(/{{title}}/g, item.title)
+				.replace(/{{subtitle}}/g, item.subtitle)
+				.replace(/{{author}}/g, item.author)
+				.replace(/{{type}}/g, item.type)
+				.replace(/{{origin}}/g, item.origin)
+				.replace(/{{ignored}}/g, item.ignored ? "true" : "false")
+				.replace(/{{asin}}/g, item.asin)
+				.replace(/{{createdAt}}/g, item.createdAt);
+		}
 
 		let existingQuotes: string[] = [];
 		let updatedFileContent = "";
@@ -225,7 +254,7 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 			for (const quote of item.quotes) {
 				let gotTempalte = template;
 
-				const hiddenContent = `\u200B${quote.content}\u200B`;
+				const hiddenContent = `${HIDDEN_CHAR}${quote.content}${HIDDEN_CHAR}`;
 
 				if (!existingQuotes.includes(quote.content)) {
 					gotTempalte = gotTempalte.replace(
@@ -381,13 +410,15 @@ function extractExistingQuotes(fileContent: string): string[] {
 }
 
 function extractExistingQuotesUsingTemplate(fileContent: string): string[] {
-	const quoteRegex = />\s(.+?)\n|​(.+?)​/g;
+	const quoteRegex = new RegExp(`${HIDDEN_CHAR}(.+?)${HIDDEN_CHAR}`, "g");
 	const quotes = [];
 	let match;
+
 	while ((match = quoteRegex.exec(fileContent)) !== null) {
-		const quote = (match[1] || match[2]).trim();
+		const quote = match[1].trim();
 		quotes.push(quote);
 	}
+
 	return quotes;
 }
 
@@ -493,7 +524,31 @@ class UnearthedSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Quote Template")
+			.setName("Source(book) template")
+			.setDesc(
+				"The template used to format each source(book). Press 'Insert Options' to append the available options."
+			)
+			.addButton((button) =>
+				button.setButtonText("Insert Options").onClick(async () => {
+					for (const option of SOURCE_TEMPLATE_OPTIONS) {
+						this.plugin.settings.sourceTemplate += `{{${option}}}\n`;
+					}
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			)
+			.addTextArea(
+				(textArea) =>
+					(textArea
+						.setValue(this.plugin.settings.sourceTemplate)
+						.onChange(async (value) => {
+							this.plugin.settings.sourceTemplate = value;
+							await this.plugin.saveSettings();
+						}).inputEl.style.height = "200px")
+			);
+
+		new Setting(containerEl)
+			.setName("Quote template")
 			.setDesc(
 				"The template used to format each individual quote/note. Placeholders: {{quote}}, {{note}}, {{location}}. Press 'Insert Template' button for an example."
 			)
