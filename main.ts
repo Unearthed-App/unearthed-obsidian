@@ -17,6 +17,9 @@ interface UnearthedSettings {
 	addDailyReflection: boolean;
 	quoteTemplate: string;
 	sourceTemplate: string;
+	sourceFilenameTemplate: string;
+	sourceFilenameLowercase: boolean;
+	sourceFilenameReplaceSpaces: string;
 }
 
 const QUOTE_TEMPLATE_EXAMPLE = `
@@ -48,6 +51,9 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	addDailyReflection: false,
 	quoteTemplate: "",
 	sourceTemplate: "",
+	sourceFilenameTemplate: "{{title}}",
+	sourceFilenameLowercase: true,
+	sourceFilenameReplaceSpaces: '-',
 };
 interface UnearthedData {
 	id: string;
@@ -204,23 +210,39 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		const folderPath = `${parentFolderPath}${firstLetterUppercase(
 			item.type
 		)}s/`;
-		const fileName = toSafeFileName(`${item.title}.md`);
-		const filePath = `${folderPath}${fileName}`;
+
+		const fileName = SOURCE_TEMPLATE_OPTIONS.reduce(
+			(acc, key) => {
+				const value = item[key as keyof UnearthedData];
+				const stringValue = typeof value === 'string' ? value : String(value); // Ensure it's a string
+
+				return acc.replace(
+					new RegExp(`{{${key}}}`, "g"),
+					stringValue
+				);
+			},
+			plugin.settings.sourceFilenameTemplate
+		);
+		const filePath = `${folderPath}${toSafeFileName(plugin, fileName)}.md`;
+
 
 		let fileContent = `# ${item.title}\n\n**Author:** [[${
 			item.author
 		}]]\n\n**Source:** ${firstLetterUppercase(item.origin)}\n\n`;
 
 		if (plugin.settings.sourceTemplate) {
-			fileContent = plugin.settings.sourceTemplate
-				.replace(/{{title}}/g, item.title)
-				.replace(/{{subtitle}}/g, item.subtitle)
-				.replace(/{{author}}/g, item.author)
-				.replace(/{{type}}/g, item.type)
-				.replace(/{{origin}}/g, item.origin)
-				.replace(/{{ignored}}/g, item.ignored ? "true" : "false")
-				.replace(/{{asin}}/g, item.asin)
-				.replace(/{{createdAt}}/g, item.createdAt);
+			fileContent = SOURCE_TEMPLATE_OPTIONS.reduce(
+				(acc, key) => {
+					const value = item[key as keyof UnearthedData];
+					const stringValue = typeof value === 'string' ? value : String(value); // Ensure it's a string
+
+					return acc.replace(
+						new RegExp(`{{${key}}}`, "g"),
+						stringValue
+					);
+				},
+				plugin.settings.sourceTemplate
+			);
 		}
 
 		let existingQuotes: string[] = [];
@@ -524,6 +546,58 @@ class UnearthedSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Filename template")
+			.setDesc(
+				"The template used to format the filename for each source(book). Press 'Insert Options' to append the available options."
+			)
+			.addButton((button) =>
+				button.setButtonText("Insert Options").onClick(async () => {
+					for (const option of SOURCE_TEMPLATE_OPTIONS) {
+						this.plugin.settings.sourceFilenameTemplate += `{{${option}}}\n`;
+					}
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Enter filename template")
+					.setValue(this.plugin.settings.sourceFilenameTemplate)
+					.onChange(async (value) => {
+						this.plugin.settings.sourceFilenameTemplate = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Filename lowercase")
+			.setDesc("Save source(book) filenames in lowercase")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.sourceFilenameLowercase)
+					.onChange(async (value) => {
+						this.plugin.settings.sourceFilenameLowercase = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Filename replace spaces with")
+			.setDesc(
+				"Enter a character to replace spaces and invalid characters with"
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Enter character")
+					.setValue(this.plugin.settings.sourceFilenameReplaceSpaces)
+					.onChange(async (value) => {
+						this.plugin.settings.sourceFilenameReplaceSpaces =
+							value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
 			.setName("Source(book) template")
 			.setDesc(
 				"The template used to format each source(book). Press 'Insert Options' to append the available options."
@@ -573,6 +647,7 @@ class UnearthedSettingTab extends PluginSettingTab {
 }
 
 function toSafeFileName(
+	plugin: Unearthed,
 	str: string,
 	options: SafeFileNameOptions = {}
 ): string {
@@ -581,8 +656,8 @@ function toSafeFileName(
 	}
 
 	const defaults = {
-		replacement: "-",
-		lowercase: true,
+		replacement: plugin.settings.sourceFilenameReplaceSpaces ? plugin.settings.sourceFilenameReplaceSpaces : " ",
+		lowercase: plugin.settings.sourceFilenameLowercase,
 		trimSpaces: true,
 		collapseSpaces: true,
 	};
