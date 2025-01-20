@@ -15,7 +15,16 @@ interface UnearthedSettings {
 	dailyReflectionDateFormat: string;
 	dailyReflectionLocation: string;
 	addDailyReflection: boolean;
+	quoteTemplate: string;
 }
+
+const QUOTE_TEMPLATE_EXAMPLE = `
+---
+> {{content}}
+
+**Note:** {{note}}
+**Location:** {{location}}
+`;
 
 const DEFAULT_SETTINGS: UnearthedSettings = {
 	unearthedApiKey: "",
@@ -23,6 +32,7 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	dailyReflectionDateFormat: "YYYY-MM-DD",
 	dailyReflectionLocation: "Daily Notes",
 	addDailyReflection: false,
+	quoteTemplate: "",
 };
 interface UnearthedData {
 	id: string;
@@ -193,7 +203,13 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 
 			if (abstractFile instanceof TFile) {
 				const fileData = await plugin.app.vault.read(abstractFile);
-				existingQuotes = extractExistingQuotes(fileData);
+
+				if (plugin.settings.quoteTemplate) {
+					existingQuotes =
+						extractExistingQuotesUsingTemplate(fileData);
+				} else {
+					existingQuotes = extractExistingQuotes(fileData);
+				}
 
 				updatedFileContent = fileData;
 			} else {
@@ -203,13 +219,43 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 			updatedFileContent = fileContent;
 		}
 
-		for (const quote of item.quotes) {
-			if (!existingQuotes.includes(quote.content)) {
-				updatedFileContent += `---\n\n> ${quote.content}\n\n`;
-				if (quote.note) {
-					updatedFileContent += `**Note:** ${quote.note}\n\n`;
+		const template = plugin.settings.quoteTemplate;
+
+		if (plugin.settings.quoteTemplate) {
+			for (const quote of item.quotes) {
+				let gotTempalte = template;
+
+				const hiddenContent = `\u200B${quote.content}\u200B`;
+
+				if (!existingQuotes.includes(quote.content)) {
+					gotTempalte = gotTempalte.replace(
+						"{{content}}",
+						hiddenContent
+					);
+					if (quote.note) {
+						gotTempalte = gotTempalte.replace(
+							"{{note}}",
+							quote.note
+						);
+					} else {
+						gotTempalte = gotTempalte.replace("{{note}}", "");
+					}
+					gotTempalte = gotTempalte.replace(
+						"{{location}}",
+						quote.location
+					);
+					updatedFileContent += "\n" + gotTempalte;
 				}
-				updatedFileContent += `**Location:** ${quote.location}\n\n`;
+			}
+		} else {
+			for (const quote of item.quotes) {
+				if (!existingQuotes.includes(quote.content)) {
+					updatedFileContent += `---\n\n> ${quote.content}\n\n`;
+					if (quote.note) {
+						updatedFileContent += `**Note:** ${quote.note}\n\n`;
+					}
+					updatedFileContent += `**Location:** ${quote.location}\n\n`;
+				}
 			}
 		}
 
@@ -334,6 +380,17 @@ function extractExistingQuotes(fileContent: string): string[] {
 	return quotes;
 }
 
+function extractExistingQuotesUsingTemplate(fileContent: string): string[] {
+	const quoteRegex = />\s(.+?)\n|​(.+?)​/g;
+	const quotes = [];
+	let match;
+	while ((match = quoteRegex.exec(fileContent)) !== null) {
+		const quote = (match[1] || match[2]).trim();
+		quotes.push(quote);
+	}
+	return quotes;
+}
+
 class UnearthedSettingTab extends PluginSettingTab {
 	plugin: Unearthed;
 
@@ -433,6 +490,29 @@ class UnearthedSettingTab extends PluginSettingTab {
 					await getAndAppendDailyReflection(this.plugin);
 					new Notice("Complete - check your daily note");
 				})
+			);
+
+		new Setting(containerEl)
+			.setName("Quote Template")
+			.setDesc(
+				"The template used to format each individual quote/note. Placeholders: {{quote}}, {{note}}, {{location}}. Press 'Insert Template' button for an example."
+			)
+			.addButton((button) =>
+				button.setButtonText("Insert Template").onClick(async () => {
+					console.log("Insert Template");
+					this.plugin.settings.quoteTemplate = QUOTE_TEMPLATE_EXAMPLE;
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			)
+			.addTextArea(
+				(textArea) =>
+					(textArea
+						.setValue(this.plugin.settings.quoteTemplate)
+						.onChange(async (value) => {
+							this.plugin.settings.quoteTemplate = value;
+							await this.plugin.saveSettings();
+						}).inputEl.style.height = "200px")
 			);
 	}
 }
