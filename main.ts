@@ -15,7 +15,33 @@ interface UnearthedSettings {
 	dailyReflectionDateFormat: string;
 	dailyReflectionLocation: string;
 	addDailyReflection: boolean;
+	quoteTemplate: string;
+	sourceTemplate: string;
+	sourceFilenameTemplate: string;
+	sourceFilenameLowercase: boolean;
+	sourceFilenameReplaceSpaces: string;
 }
+
+const QUOTE_TEMPLATE_EXAMPLE = `
+---
+> {{content}}
+
+**Note:** {{note}}
+**Location:** {{location}}
+`;
+
+const SOURCE_TEMPLATE_OPTIONS = [
+	"title",
+	"subtitle",
+	"author",
+	"type",
+	"origin",
+	"asin",
+	"ignored",
+	"createdAt",
+];
+
+const HIDDEN_CHAR = "\u200B";
 
 const DEFAULT_SETTINGS: UnearthedSettings = {
 	unearthedApiKey: "",
@@ -23,6 +49,11 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	dailyReflectionDateFormat: "YYYY-MM-DD",
 	dailyReflectionLocation: "Daily Notes",
 	addDailyReflection: false,
+	quoteTemplate: "",
+	sourceTemplate: "",
+	sourceFilenameTemplate: "{{title}}",
+	sourceFilenameLowercase: true,
+	sourceFilenameReplaceSpaces: '-',
 };
 interface UnearthedData {
 	id: string;
@@ -35,6 +66,7 @@ interface UnearthedData {
 	userId: string;
 	ignored: boolean;
 	createdAt: string;
+	asin: string;
 	quotes: UnearthedQuote[];
 }
 
@@ -178,11 +210,40 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		const folderPath = `${parentFolderPath}${firstLetterUppercase(
 			item.type
 		)}s/`;
-		const fileName = toSafeFileName(`${item.title}.md`);
-		const filePath = `${folderPath}${fileName}`;
-		const fileContent = `# ${item.title}\n\n**Author:** [[${
+
+		const fileName = SOURCE_TEMPLATE_OPTIONS.reduce(
+			(acc, key) => {
+				const value = item[key as keyof UnearthedData];
+				const stringValue = typeof value === 'string' ? value : String(value); // Ensure it's a string
+
+				return acc.replace(
+					new RegExp(`{{${key}}}`, "g"),
+					stringValue
+				);
+			},
+			plugin.settings.sourceFilenameTemplate
+		);
+		const filePath = `${folderPath}${toSafeFileName(plugin, fileName)}.md`;
+
+
+		let fileContent = `# ${item.title}\n\n**Author:** [[${
 			item.author
 		}]]\n\n**Source:** ${firstLetterUppercase(item.origin)}\n\n`;
+
+		if (plugin.settings.sourceTemplate) {
+			fileContent = SOURCE_TEMPLATE_OPTIONS.reduce(
+				(acc, key) => {
+					const value = item[key as keyof UnearthedData];
+					const stringValue = typeof value === 'string' ? value : String(value); // Ensure it's a string
+
+					return acc.replace(
+						new RegExp(`{{${key}}}`, "g"),
+						stringValue
+					);
+				},
+				plugin.settings.sourceTemplate
+			);
+		}
 
 		let existingQuotes: string[] = [];
 		let updatedFileContent = "";
@@ -193,7 +254,13 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 
 			if (abstractFile instanceof TFile) {
 				const fileData = await plugin.app.vault.read(abstractFile);
-				existingQuotes = extractExistingQuotes(fileData);
+
+				if (plugin.settings.quoteTemplate) {
+					existingQuotes =
+						extractExistingQuotesUsingTemplate(fileData);
+				} else {
+					existingQuotes = extractExistingQuotes(fileData);
+				}
 
 				updatedFileContent = fileData;
 			} else {
@@ -203,13 +270,43 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 			updatedFileContent = fileContent;
 		}
 
-		for (const quote of item.quotes) {
-			if (!existingQuotes.includes(quote.content)) {
-				updatedFileContent += `---\n\n> ${quote.content}\n\n`;
-				if (quote.note) {
-					updatedFileContent += `**Note:** ${quote.note}\n\n`;
+		const template = plugin.settings.quoteTemplate;
+
+		if (plugin.settings.quoteTemplate) {
+			for (const quote of item.quotes) {
+				let gotTemplate = template;
+
+				const hiddenContent = `${HIDDEN_CHAR}${quote.content}${HIDDEN_CHAR}`;
+
+				if (!existingQuotes.includes(quote.content)) {
+					gotTemplate = gotTemplate.replace(
+						"{{content}}",
+						hiddenContent
+					);
+					if (quote.note) {
+						gotTemplate = gotTemplate.replace(
+							"{{note}}",
+							quote.note
+						);
+					} else {
+						gotTemplate = gotTemplate.replace("{{note}}", "");
+					}
+					gotTemplate = gotTemplate.replace(
+						"{{location}}",
+						quote.location
+					);
+					updatedFileContent += "\n" + gotTemplate;
 				}
-				updatedFileContent += `**Location:** ${quote.location}\n\n`;
+			}
+		} else {
+			for (const quote of item.quotes) {
+				if (!existingQuotes.includes(quote.content)) {
+					updatedFileContent += `---\n\n> ${quote.content}\n\n`;
+					if (quote.note) {
+						updatedFileContent += `**Note:** ${quote.note}\n\n`;
+					}
+					updatedFileContent += `**Location:** ${quote.location}\n\n`;
+				}
 			}
 		}
 
@@ -334,6 +431,19 @@ function extractExistingQuotes(fileContent: string): string[] {
 	return quotes;
 }
 
+function extractExistingQuotesUsingTemplate(fileContent: string): string[] {
+	const quoteRegex = new RegExp(`${HIDDEN_CHAR}(.+?)${HIDDEN_CHAR}`, "g");
+	const quotes = [];
+	let match;
+
+	while ((match = quoteRegex.exec(fileContent)) !== null) {
+		const quote = match[1].trim();
+		quotes.push(quote);
+	}
+
+	return quotes;
+}
+
 class UnearthedSettingTab extends PluginSettingTab {
 	plugin: Unearthed;
 
@@ -434,10 +544,110 @@ class UnearthedSettingTab extends PluginSettingTab {
 					new Notice("Complete - check your daily note");
 				})
 			);
+
+		new Setting(containerEl)
+			.setName("Filename template")
+			.setDesc(
+				"The template used to format the filename for each source(book). Press 'Insert Options' to append the available options."
+			)
+			.addButton((button) =>
+				button.setButtonText("Insert Options").onClick(async () => {
+					for (const option of SOURCE_TEMPLATE_OPTIONS) {
+						this.plugin.settings.sourceFilenameTemplate += `{{${option}}}\n`;
+					}
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Enter filename template")
+					.setValue(this.plugin.settings.sourceFilenameTemplate)
+					.onChange(async (value) => {
+						this.plugin.settings.sourceFilenameTemplate = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Filename lowercase")
+			.setDesc("Save source(book) filenames in lowercase")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.sourceFilenameLowercase)
+					.onChange(async (value) => {
+						this.plugin.settings.sourceFilenameLowercase = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Filename replace spaces with")
+			.setDesc(
+				"Enter a character to replace spaces and invalid characters with"
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Enter character")
+					.setValue(this.plugin.settings.sourceFilenameReplaceSpaces)
+					.onChange(async (value) => {
+						this.plugin.settings.sourceFilenameReplaceSpaces =
+							value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Source(book) template")
+			.setDesc(
+				"The template used to format each source(book). Press 'Insert Options' to append the available options."
+			)
+			.addButton((button) =>
+				button.setButtonText("Insert Options").onClick(async () => {
+					for (const option of SOURCE_TEMPLATE_OPTIONS) {
+						this.plugin.settings.sourceTemplate += `{{${option}}}\n`;
+					}
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			)
+			.addTextArea(
+				(textArea) =>
+					(textArea
+						.setValue(this.plugin.settings.sourceTemplate)
+						.onChange(async (value) => {
+							this.plugin.settings.sourceTemplate = value;
+							await this.plugin.saveSettings();
+						}).inputEl.style.height = "200px")
+			);
+
+		new Setting(containerEl)
+			.setName("Quote template")
+			.setDesc(
+				"The template used to format each individual quote/note. Placeholders: {{quote}}, {{note}}, {{location}}. Press 'Insert Template' button for an example."
+			)
+			.addButton((button) =>
+				button.setButtonText("Insert Template").onClick(async () => {
+					console.log("Insert Template");
+					this.plugin.settings.quoteTemplate = QUOTE_TEMPLATE_EXAMPLE;
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			)
+			.addTextArea(
+				(textArea) =>
+					(textArea
+						.setValue(this.plugin.settings.quoteTemplate)
+						.onChange(async (value) => {
+							this.plugin.settings.quoteTemplate = value;
+							await this.plugin.saveSettings();
+						}).inputEl.style.height = "200px")
+			);
 	}
 }
 
 function toSafeFileName(
+	plugin: Unearthed,
 	str: string,
 	options: SafeFileNameOptions = {}
 ): string {
@@ -446,8 +656,8 @@ function toSafeFileName(
 	}
 
 	const defaults = {
-		replacement: "-",
-		lowercase: true,
+		replacement: plugin.settings.sourceFilenameReplaceSpaces ? plugin.settings.sourceFilenameReplaceSpaces : " ",
+		lowercase: plugin.settings.sourceFilenameLowercase,
 		trimSpaces: true,
 		collapseSpaces: true,
 	};
