@@ -20,6 +20,7 @@ interface UnearthedSettings {
 	sourceFilenameTemplate: string;
 	sourceFilenameLowercase: boolean;
 	sourceFilenameReplaceSpaces: string;
+	lastSyncDate: string;
 }
 
 const QUOTE_TEMPLATE_EXAMPLE = `
@@ -53,7 +54,8 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	sourceTemplate: "",
 	sourceFilenameTemplate: "{{title}}",
 	sourceFilenameLowercase: true,
-	sourceFilenameReplaceSpaces: '-',
+	sourceFilenameReplaceSpaces: "-",
+	lastSyncDate: "",
 };
 interface UnearthedData {
 	id: string;
@@ -103,16 +105,28 @@ export default class Unearthed extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		// Start sync process when Obsidian opens, if autoSync is enabled
-		this.app.workspace.onLayoutReady(async () => {
-			if (this.settings.autoSync) {
-				new Notice("Unearthed Sync started, please wait...");
-				await syncData(this);
-				new Notice("Unearthed Sync complete");
-			}
+		const getLocalDateStr = () => window.moment().format("YYYY-MM-DD");
 
-			if (this.settings.addDailyReflection) {
-				await getAndAppendDailyReflection(this);
+		this.app.workspace.onLayoutReady(async () => {
+			const currentDate = getLocalDateStr();
+			if (
+				!window
+					.moment(this.settings.lastSyncDate, "YYYY-MM-DD")
+					.isSame(window.moment(), "day")
+			) {
+				if (this.settings.addDailyReflection) {
+					await getAndAppendDailyReflection(this);
+				}
+
+				if (this.settings.autoSync) {
+					new Notice("Unearthed Sync started, please wait...");
+					await syncData(this);
+					new Notice("Unearthed Sync complete");
+
+					this.settings.lastSyncDate = currentDate;
+
+					await this.saveSettings();
+				}
 			}
 		});
 
@@ -121,6 +135,7 @@ export default class Unearthed extends Plugin {
 			"Kindle (Unearthed) Sync",
 			async (evt: MouseEvent) => {
 				new Notice("Unearthed Sync started, please wait...");
+				await getAndAppendDailyReflection(this);
 				await syncData(this);
 				new Notice("Unearthed Sync complete");
 			}
@@ -211,38 +226,27 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 			item.type
 		)}s/`;
 
-		const fileName = SOURCE_TEMPLATE_OPTIONS.reduce(
-			(acc, key) => {
-				const value = item[key as keyof UnearthedData];
-				const stringValue = typeof value === 'string' ? value : String(value); // Ensure it's a string
+		const fileName = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
+			const value = item[key as keyof UnearthedData];
+			const stringValue =
+				typeof value === "string" ? value : String(value); // Ensure it's a string
 
-				return acc.replace(
-					new RegExp(`{{${key}}}`, "g"),
-					stringValue
-				);
-			},
-			plugin.settings.sourceFilenameTemplate
-		);
+			return acc.replace(new RegExp(`{{${key}}}`, "g"), stringValue);
+		}, plugin.settings.sourceFilenameTemplate);
 		const filePath = `${folderPath}${toSafeFileName(plugin, fileName)}.md`;
-
 
 		let fileContent = `# ${item.title}\n\n**Author:** [[${
 			item.author
 		}]]\n\n**Source:** ${firstLetterUppercase(item.origin)}\n\n`;
 
 		if (plugin.settings.sourceTemplate) {
-			fileContent = SOURCE_TEMPLATE_OPTIONS.reduce(
-				(acc, key) => {
-					const value = item[key as keyof UnearthedData];
-					const stringValue = typeof value === 'string' ? value : String(value); // Ensure it's a string
+			fileContent = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
+				const value = item[key as keyof UnearthedData];
+				const stringValue =
+					typeof value === "string" ? value : String(value); // Ensure it's a string
 
-					return acc.replace(
-						new RegExp(`{{${key}}}`, "g"),
-						stringValue
-					);
-				},
-				plugin.settings.sourceTemplate
-			);
+				return acc.replace(new RegExp(`{{${key}}}`, "g"), stringValue);
+			}, plugin.settings.sourceTemplate);
 		}
 
 		let existingQuotes: string[] = [];
@@ -643,6 +647,13 @@ class UnearthedSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						}).inputEl.style.height = "200px")
 			);
+		new Setting(containerEl)
+			.setName("Last auto sync date")
+			.setDesc(
+				this.plugin.settings.lastSyncDate
+					? this.plugin.settings.lastSyncDate
+					: "Never"
+			);
 	}
 }
 
@@ -656,7 +667,9 @@ function toSafeFileName(
 	}
 
 	const defaults = {
-		replacement: plugin.settings.sourceFilenameReplaceSpaces ? plugin.settings.sourceFilenameReplaceSpaces : " ",
+		replacement: plugin.settings.sourceFilenameReplaceSpaces
+			? plugin.settings.sourceFilenameReplaceSpaces
+			: " ",
 		lowercase: plugin.settings.sourceFilenameLowercase,
 		trimSpaces: true,
 		collapseSpaces: true,
