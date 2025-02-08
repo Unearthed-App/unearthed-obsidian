@@ -21,6 +21,7 @@ interface UnearthedSettings {
 	sourceFilenameLowercase: boolean;
 	sourceFilenameReplaceSpaces: string;
 	lastSyncDate: string;
+	dailyReflectionTemplate: string;
 }
 
 const QUOTE_TEMPLATE_EXAMPLE = `
@@ -29,6 +30,20 @@ const QUOTE_TEMPLATE_EXAMPLE = `
 
 **Note:** {{note}}
 **Location:** {{location}}
+`;
+
+const DAILY_REFLECTION_TEMPLATE_EXAMPLE = `
+## Daily Reflection
+
+> {{quote}}
+
+**{{type}}:** [[{{source}}]]
+**Author:** [[{{author}}]]
+**Location:** {{location}}
+
+**Note:** {{note}}
+
+---
 `;
 
 const SOURCE_TEMPLATE_OPTIONS = [
@@ -56,6 +71,7 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	sourceFilenameLowercase: true,
 	sourceFilenameReplaceSpaces: "-",
 	lastSyncDate: "",
+	dailyReflectionTemplate: "",
 };
 interface UnearthedData {
 	id: string;
@@ -376,7 +392,7 @@ async function appendToDailyNote(
 		return;
 	}
 
-	const reflectionContent = `
+	let reflectionContent = `
 ---
 ## Daily Reflection
 
@@ -391,8 +407,58 @@ async function appendToDailyNote(
 ---
 `;
 
-	if (!content.includes("## Daily Reflection")) {
-		content += reflectionContent;
+	if (plugin.settings.dailyReflectionTemplate) {
+		reflectionContent = plugin.settings.dailyReflectionTemplate;
+		reflectionContent = reflectionContent.replace(
+			"{{quote}}",
+			reflection.quote
+		);
+		reflectionContent = reflectionContent.replace(
+			"{{type}}",
+			firstLetterUppercase(reflection.type)
+		);
+		reflectionContent = reflectionContent.replace(
+			"{{source}}",
+			reflection.source
+		);
+		reflectionContent = reflectionContent.replace(
+			"{{author}}",
+			reflection.author
+		);
+		reflectionContent = reflectionContent.replace(
+			"{{location}}",
+			reflection.location
+		);
+		reflectionContent = reflectionContent.replace(
+			"{{note}}",
+			reflection.note ? reflection.note : ""
+		);
+		reflectionContent = reflectionContent.replace(
+			"{{dailyReflectionContent}}",
+			`> "${reflection.quote}"\n\n**${firstLetterUppercase(
+				reflection.type
+			)}:** [[${reflection.source}]]\n**Author:** [[${
+				reflection.author
+			}]]\n**Location:** ${reflection.location}\n\n**Note:** ${
+				reflection.note
+			}`
+		);
+	}
+
+	const hiddenReflectionContent = `${HIDDEN_CHAR}${reflectionContent}${HIDDEN_CHAR}`;
+
+	let existingReflection = false;
+	if (plugin.settings.dailyReflectionTemplate) {
+		existingReflection = extractExistingDailyReflectionUsingTemplate(
+			content,
+			plugin.settings.dailyReflectionTemplate
+		);
+	} else {
+		existingReflection = content.includes("## Daily Reflection");
+	}
+
+	if (!existingReflection) {
+		content += hiddenReflectionContent;
 		await plugin.app.vault.modify(file, content);
 	}
 }
@@ -446,6 +512,21 @@ function extractExistingQuotesUsingTemplate(fileContent: string): string[] {
 	}
 
 	return quotes;
+}
+
+function extractExistingDailyReflectionUsingTemplate(
+	fileContent: string,
+	template: string
+): boolean {
+	if (!template) {
+		return fileContent.includes("## Daily Reflection");
+	}
+	const reflectionRegex = new RegExp(
+		`${HIDDEN_CHAR}(.*?)${HIDDEN_CHAR}`,
+		"gs"
+	);
+	const match = reflectionRegex.exec(fileContent);
+	return match !== null;
 }
 
 class UnearthedSettingTab extends PluginSettingTab {
@@ -647,6 +728,31 @@ class UnearthedSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						}).inputEl.style.height = "200px")
 			);
+
+		new Setting(containerEl)
+			.setName("Daily reflection template")
+			.setDesc(
+				"The template used to format the daily reflection section in your daily note. Placeholders: {{quote}}, {{type}}, {{source}}, {{author}}, {{location}}, {{note}}. Press 'Insert Template' button for an example."
+			)
+			.addButton((button) =>
+				button.setButtonText("Insert Template").onClick(async () => {
+					this.plugin.settings.dailyReflectionTemplate =
+						DAILY_REFLECTION_TEMPLATE_EXAMPLE;
+					await this.plugin.saveSettings();
+					this.display();
+				})
+			)
+			.addTextArea(
+				(textArea) =>
+					(textArea
+						.setValue(this.plugin.settings.dailyReflectionTemplate)
+						.onChange(async (value) => {
+							this.plugin.settings.dailyReflectionTemplate =
+								value;
+							await this.plugin.saveSettings();
+						}).inputEl.style.height = "200px")
+			);
+
 		new Setting(containerEl)
 			.setName("Last auto sync date")
 			.setDesc(
