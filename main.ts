@@ -22,6 +22,7 @@ interface UnearthedSettings {
 	sourceFilenameReplaceSpaces: string;
 	lastSyncDate: string;
 	dailyReflectionTemplate: string;
+	secret: string;
 }
 
 const QUOTE_TEMPLATE_EXAMPLE = `
@@ -72,7 +73,9 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	sourceFilenameReplaceSpaces: "-",
 	lastSyncDate: "",
 	dailyReflectionTemplate: "",
+	secret: "",
 };
+
 interface UnearthedData {
 	id: string;
 	title: string;
@@ -176,6 +179,7 @@ export default class Unearthed extends Plugin {
 }
 
 async function syncData(plugin: Unearthed) {
+	await checkConnection(plugin);
 	try {
 		const { data } = await fetchSources(plugin);
 
@@ -191,11 +195,11 @@ async function fetchSources(plugin: Unearthed) {
 	const settings = plugin.settings;
 
 	const response = await requestUrl({
-		url: "https://unearthed.app/api/public/obsidian-sync",
+		url: "https://unearthed.app/api/public/obsidian-get",
 		method: "GET",
 		headers: {
 			"Content-Type": "application/json",
-			Authorization: `Bearer ${settings.unearthedApiKey}`,
+			Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
 		},
 	});
 
@@ -345,7 +349,42 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 	}
 }
 
+async function checkConnection(plugin: Unearthed) {
+	new Notice("Checking connection...");
+
+	if (!plugin.settings.secret) {
+		try {
+			const connectResults = await requestUrl({
+				url: "https://unearthed.app/api/public/connect",
+				method: "GET",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${plugin.settings.unearthedApiKey}`,
+				},
+			});
+
+			if (connectResults.status === 200) {
+				plugin.settings.secret = connectResults.json.data.secret;
+				await plugin.saveSettings();
+				new Notice("Connected successfully!");
+			} else {
+				new Notice(
+					"Failed to connect to Unearthed. Status: " + connectResults.status
+				);
+				console.error(
+					"Failed to connect to Unearthed. Status:",
+					connectResults.status
+				);
+			}
+		} catch (error) {
+			new Notice("Could not connect to Unearthed.");
+			console.error("Error connecting to Unearthed:", error);
+		}
+	}
+}
+
 async function getAndAppendDailyReflection(plugin: Unearthed) {
+	await checkConnection(plugin);
 	if (!plugin.settings.dailyReflectionLocation) {
 		new Notice("Please specify a Daily Note folder location");
 		return;
@@ -467,11 +506,11 @@ async function fetchDailyReflection(plugin: Unearthed) {
 	const settings = plugin.settings;
 
 	const response = await requestUrl({
-		url: "https://unearthed.app/api/public/get-daily",
+		url: "https://unearthed.app/api/public/daily-reflection",
 		method: "GET",
 		headers: {
 			"Content-Type": "application/json",
-			Authorization: `Bearer ${settings.unearthedApiKey}`,
+			Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
 		},
 	});
 
@@ -551,6 +590,7 @@ class UnearthedSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.unearthedApiKey)
 					.onChange(async (value) => {
 						this.plugin.settings.unearthedApiKey = value;
+						this.plugin.settings.secret = "";
 						await this.plugin.saveSettings();
 					})
 			);
@@ -713,7 +753,6 @@ class UnearthedSettingTab extends PluginSettingTab {
 			)
 			.addButton((button) =>
 				button.setButtonText("Insert Template").onClick(async () => {
-					console.log("Insert Template");
 					this.plugin.settings.quoteTemplate = QUOTE_TEMPLATE_EXAMPLE;
 					await this.plugin.saveSettings();
 					this.display();
