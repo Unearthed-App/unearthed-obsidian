@@ -307,8 +307,7 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		const fileName = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
 			const value = item[key as keyof UnearthedData];
 			const stringValue =
-				typeof value === "string" ? value : String(value); // Ensure it's a string
-
+				typeof value === "string" ? value : String(value);
 			return acc.replace(new RegExp(`{{${key}}}`, "g"), stringValue);
 		}, plugin.settings.sourceFilenameTemplate);
 		const filePath = `${folderPath}${toSafeFileName(plugin, fileName)}.md`;
@@ -319,12 +318,37 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 
 		if (plugin.settings.sourceTemplate) {
 			fileContent = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
-				const value = item[key as keyof UnearthedData];
+				const value = item[key as keyof UnearthedData] ?? "";
 				const stringValue =
-					typeof value === "string" ? value : String(value); // Ensure it's a string
+					typeof value === "string" ? value : String(value);
 
-				return acc.replace(new RegExp(`{{${key}}}`, "g"), stringValue);
-			}, plugin.settings.sourceTemplate);
+				if (key.startsWith("createdAt")) {
+					const createdAtValues = acc.match(
+						/{{createdAt(\w*|\|date:\w*-\w*-\w*)}}/g
+					);
+
+					if (createdAtValues) {
+						for (const template of createdAtValues) {
+							if (template.includes("|date:")) {
+								const format =
+									template.match(/\|date:(.+?)}}/)?.[1];
+								const formattedDate = window
+									.moment(stringValue)
+									.format(format);
+								acc = acc.replace(template, formattedDate);
+							} else {
+								acc = acc.replace(template, stringValue);
+							}
+						}
+						return acc;
+					}
+				} else {
+					return acc.replace(
+						new RegExp(`{{${key}}}`, "g"),
+						stringValue
+					);
+				}
+			}, plugin.settings.sourceTemplate) ?? '';
 		}
 
 		let existingQuotes: string[] = [];
@@ -632,7 +656,6 @@ async function getAndAppendDailyReflection(plugin: Unearthed) {
 		return;
 	}
 
-
 	await syncData(plugin, false);
 
 	const dailyReflection = await fetchDailyReflection(plugin);
@@ -753,7 +776,7 @@ async function fetchDailyReflection(plugin: Unearthed) {
 			Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
 		},
 	});
-	
+
 	const { data } = response.json;
 
 	if (!data || !data.dailyReflection || typeof data === "undefined") {
@@ -989,6 +1012,11 @@ class UnearthedSettingTab extends PluginSettingTab {
 				button.setButtonText("Insert Options").onClick(async () => {
 					for (const option of SOURCE_TEMPLATE_OPTIONS) {
 						this.plugin.settings.sourceTemplate += `{{${option}}}\n`;
+
+						if (option == "createdAt") {
+							this.plugin.settings.sourceTemplate +=
+								"{{createdAt|date:YYYY-MM-DD}}\n";
+						}
 					}
 					await this.plugin.saveSettings();
 					this.display();
