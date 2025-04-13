@@ -23,6 +23,7 @@ interface UnearthedSettings {
 	lastSyncDate: string;
 	dailyReflectionTemplate: string;
 	secret: string;
+	rootFolder: string;
 }
 
 const QUOTE_TEMPLATE_EXAMPLE = `
@@ -57,6 +58,7 @@ const SOURCE_TEMPLATE_OPTIONS = [
 	"ignored",
 	"createdAt",
 ];
+const sourceIdToFileName = new Map<string, string>();
 
 const HIDDEN_CHAR = "\u200B";
 
@@ -74,6 +76,7 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	lastSyncDate: "",
 	dailyReflectionTemplate: "",
 	secret: "",
+	rootFolder: "Unearthed",
 };
 
 interface UnearthedData {
@@ -91,6 +94,15 @@ interface UnearthedData {
 	quotes: UnearthedQuote[];
 }
 
+interface UnearthedTagData {
+	id: string;
+	userId: string;
+	title: string;
+	description: string;
+	createdAt: Date;
+	sourceIds: string[];
+}
+
 interface UnearthedQuote {
 	id: string;
 	content: string;
@@ -105,6 +117,7 @@ interface UnearthedQuote {
 interface DailyReflection {
 	type: string;
 	source: string;
+	sourceId: string;
 	author: string;
 	quote: string;
 	note: string;
@@ -149,16 +162,12 @@ export default class Unearthed extends Plugin {
 			}
 		});
 
-		this.addRibbonIcon(
-			"book",
-			"Kindle (Unearthed) Sync",
-			async (evt: MouseEvent) => {
-				new Notice("Unearthed Sync started, please wait...");
-				await getAndAppendDailyReflection(this);
-				await syncData(this);
-				new Notice("Unearthed Sync complete");
-			}
-		);
+		this.addRibbonIcon("book", "Kindle (Unearthed) Sync", async () => {
+			new Notice("Unearthed Sync started, please wait...");
+			await getAndAppendDailyReflection(this);
+			await syncData(this);
+			new Notice("Unearthed Sync complete");
+		});
 
 		this.addSettingTab(new UnearthedSettingTab(this.app, this));
 	}
@@ -178,13 +187,39 @@ export default class Unearthed extends Plugin {
 	}
 }
 
-async function syncData(plugin: Unearthed) {
+async function syncData(plugin: Unearthed, applyTheData = true) {
 	await checkConnection(plugin);
 	try {
 		const { data } = await fetchSources(plugin);
+		const tagsData = await fetchTags(plugin);
+
+		sourceIdToFileName.clear();
 
 		if (data && data.length > 0) {
-			await applyData(plugin, data);
+			for (const item of data) {
+				const fileName = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
+					const value = item[key as keyof UnearthedData];
+					const stringValue =
+						typeof value === "string" ? value : String(value);
+					return acc.replace(
+						new RegExp(`{{${key}}}`, "g"),
+						stringValue
+					);
+				}, plugin.settings.sourceFilenameTemplate);
+				const safeFileName = toSafeFileName(plugin, fileName);
+
+				sourceIdToFileName.set(item.id, safeFileName);
+			}
+
+			if (applyTheData) {
+				await applyData(plugin, data);
+			}
+		}
+
+		if (tagsData && tagsData.length > 0) {
+			if (applyTheData) {
+				await applyTags(plugin, tagsData);
+			}
 		}
 	} catch (error) {
 		// error
@@ -206,8 +241,33 @@ async function fetchSources(plugin: Unearthed) {
 	return response.json;
 }
 
+async function fetchTags(plugin: Unearthed) {
+	const settings = plugin.settings;
+
+	try {
+		const response = await requestUrl({
+			url: "https://unearthed.app/api/public/obsidian-get-tags",
+			method: "GET",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+			},
+		});
+
+		const tagsResponse = response.json;
+
+		if (tagsResponse.success) {
+			return tagsResponse.data;
+		} else {
+			return [];
+		}
+	} catch (error) {
+		return [];
+	}
+}
+
 async function applyData(plugin: Unearthed, data: UnearthedData[]) {
-	const parentFolderPath = `Unearthed/`;
+	const parentFolderPath = `${plugin.settings.rootFolder}/`;
 
 	try {
 		const abstractFile =
@@ -249,8 +309,7 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		const fileName = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
 			const value = item[key as keyof UnearthedData];
 			const stringValue =
-				typeof value === "string" ? value : String(value); // Ensure it's a string
-
+				typeof value === "string" ? value : String(value);
 			return acc.replace(new RegExp(`{{${key}}}`, "g"), stringValue);
 		}, plugin.settings.sourceFilenameTemplate);
 		const filePath = `${folderPath}${toSafeFileName(plugin, fileName)}.md`;
@@ -260,13 +319,39 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		}]]\n\n**Source:** ${firstLetterUppercase(item.origin)}\n\n`;
 
 		if (plugin.settings.sourceTemplate) {
-			fileContent = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
-				const value = item[key as keyof UnearthedData];
-				const stringValue =
-					typeof value === "string" ? value : String(value); // Ensure it's a string
+			fileContent =
+				SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
+					const value = item[key as keyof UnearthedData] ?? "";
+					const stringValue =
+						typeof value === "string" ? value : String(value);
 
-				return acc.replace(new RegExp(`{{${key}}}`, "g"), stringValue);
-			}, plugin.settings.sourceTemplate);
+					if (key.startsWith("createdAt")) {
+						const createdAtValues = acc.match(
+							/{{createdAt(\w*|\|date:\w*-\w*-\w*)}}/g
+						);
+
+						if (createdAtValues) {
+							for (const template of createdAtValues) {
+								if (template.includes("|date:")) {
+									const format =
+										template.match(/\|date:(.+?)}}/)?.[1];
+									const formattedDate = window
+										.moment(stringValue)
+										.format(format);
+									acc = acc.replace(template, formattedDate);
+								} else {
+									acc = acc.replace(template, stringValue);
+								}
+							}
+							return acc;
+						}
+					} else {
+						return acc.replace(
+							new RegExp(`{{${key}}}`, "g"),
+							stringValue
+						);
+					}
+				}, plugin.settings.sourceTemplate) ?? "";
 		}
 
 		let existingQuotes: string[] = [];
@@ -349,6 +434,186 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 	}
 }
 
+async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
+	const parentFolderPath = `${plugin.settings.rootFolder}/Tags/`;
+
+	try {
+		const abstractFile =
+			plugin.app.vault.getAbstractFileByPath(parentFolderPath);
+		if (!abstractFile || !(abstractFile instanceof TFolder)) {
+			await plugin.app.vault.createFolder(parentFolderPath);
+		}
+	} catch (error) {
+		// No folder created
+	}
+
+	for (const tag of data) {
+		let fileName = toSafeFileName(plugin, tag.title);
+		fileName = await fileExists(plugin, fileName);
+
+		const filePath = `${parentFolderPath}${fileName}.md`;
+
+		// Check if the tag file already exists in the Tags folder
+		const tagFile = plugin.app.vault.getAbstractFileByPath(filePath);
+		if (tagFile instanceof TFile) {
+			continue;
+		}
+
+		// Create the initial content for the tag file
+		let fileContent = `# ${tag.title}\n\n`;
+
+		// Add description if available
+		if (tag.description) {
+			fileContent += `${tag.description}\n\n`;
+		}
+
+		// Add sources section if there are any source IDs
+		if (tag.sourceIds && tag.sourceIds.length > 0) {
+			fileContent += `## Sources\n\n`;
+
+			// Try to find source files in the root directory
+			const sourcesFolder = `${plugin.settings.rootFolder}/`;
+			const sourceFolders = await plugin.app.vault.adapter.list(
+				sourcesFolder
+			);
+
+			// Keep track of sources we've found
+			const foundSources: string[] = [];
+
+			// Search for source files in all subfolders
+			if (sourceFolders && sourceFolders.folders) {
+				for (const folder of sourceFolders.folders) {
+					// Skip the Tags folder
+					if (folder === parentFolderPath) continue;
+
+					try {
+						const folderContents =
+							await plugin.app.vault.adapter.list(folder);
+						if (folderContents && folderContents.files) {
+							for (const file of folderContents.files) {
+								if (file.endsWith(".md")) {
+									const fileContent =
+										await plugin.app.vault.adapter.read(
+											file
+										);
+
+									// Check if this file contains any of our source IDs
+									for (const sourceId of tag.sourceIds) {
+										if (fileContent.includes(sourceId)) {
+											// Extract the title from the file path
+											const fileName =
+												file
+													.split("/")
+													.pop()
+													?.replace(".md", "") ||
+												"Unknown";
+
+											// Make sure we're not adding a tag file as a source
+											if (!folder.includes(`Tags`)) {
+												foundSources.push(
+													`- [[${fileName}]]\n`
+												);
+											}
+											break;
+										}
+									}
+								}
+							}
+						}
+					} catch (error) {
+						// Skip this folder if there's an error
+					}
+				}
+			}
+
+			// Add the sources we found
+			if (foundSources.length > 0) {
+				// Remove any duplicates
+				const uniqueSources = [...new Set(foundSources)];
+				for (const source of uniqueSources) {
+					fileContent += source;
+				}
+			} else {
+				// If we didn't find any sources directly, try to use the sourceIdToFileName mapping
+				let foundMappedSources = false;
+				for (const sourceId of tag.sourceIds) {
+					// Try to get the filename from the mapping
+					const fileName = sourceIdToFileName.get(sourceId);
+					if (fileName) {
+						fileContent += `- [[${fileName}]]\n`;
+						foundMappedSources = true;
+					}
+				}
+
+				// If we still didn't find any sources, just list the IDs
+				if (!foundMappedSources) {
+					for (const sourceId of tag.sourceIds) {
+						// Try to create a safe filename from the sourceId
+						const safeSourceId = toSafeFileName(plugin, sourceId);
+						fileContent += `- [[${safeSourceId}]]\n`;
+					}
+				}
+			}
+		}
+
+		// Check if the file already exists
+		try {
+			const abstractFile =
+				plugin.app.vault.getAbstractFileByPath(filePath);
+
+			if (abstractFile instanceof TFile) {
+				// File exists, update it
+				await plugin.app.vault.modify(abstractFile, fileContent);
+			} else {
+				// File doesn't exist, create it
+				await plugin.app.vault.create(filePath, fileContent);
+			}
+		} catch (error) {
+			// Error handling file, try to create it
+			try {
+				await plugin.app.vault.create(filePath, fileContent);
+			} catch (createError) {
+				// Failed to create file
+			}
+		}
+	}
+}
+
+async function listFolders(plugin: Unearthed) {
+	const folders = await plugin.app.vault.adapter.list(
+		`${plugin.settings.rootFolder}/`
+	);
+	return folders.folders;
+}
+
+async function fileExists(plugin: Unearthed, fileName: string) {
+	const listOfFolders = await listFolders(plugin);
+
+	const filteredFolders = listOfFolders.filter(
+		(folder) => folder !== `${plugin.settings.rootFolder}/Tags`
+	);
+
+	let counter = 1;
+	for (const folder of filteredFolders) {
+		const files = await plugin.app.vault.adapter.list(folder);
+
+		if (files.files.includes(`${folder}/${fileName}.md`)) {
+			let newFileName = `${fileName}-${counter}`;
+
+			while (files.files.includes(`${folder}/${newFileName}.md`)) {
+				counter++;
+				newFileName = `${fileName}-${counter}`;
+			}
+
+			if (folder === filteredFolders[filteredFolders.length - 1]) {
+				return newFileName;
+			}
+		}
+	}
+
+	return fileName;
+}
+
 async function checkConnection(plugin: Unearthed) {
 	new Notice("Checking connection...");
 
@@ -369,7 +634,8 @@ async function checkConnection(plugin: Unearthed) {
 				new Notice("Connected successfully!");
 			} else {
 				new Notice(
-					"Failed to connect to Unearthed. Status: " + connectResults.status
+					"Failed to connect to Unearthed. Status: " +
+						connectResults.status
 				);
 				console.error(
 					"Failed to connect to Unearthed. Status:",
@@ -394,6 +660,8 @@ async function getAndAppendDailyReflection(plugin: Unearthed) {
 		new Notice("Please specify a Daily Note date format");
 		return;
 	}
+
+	await syncData(plugin, false);
 
 	const dailyReflection = await fetchDailyReflection(plugin);
 
@@ -431,13 +699,16 @@ async function appendToDailyNote(
 		return;
 	}
 
+	const sourceFile =
+		sourceIdToFileName.get(reflection.sourceId) || reflection.source;
+
 	let reflectionContent = `
 ---
 ## Daily Reflection
 
 > "${reflection.quote}"
 
-**${firstLetterUppercase(reflection.type)}:** [[${reflection.source}]]
+**${firstLetterUppercase(reflection.type)}:** [[${sourceFile}]]
 **Author:** [[${reflection.author}]]
 **Location:** ${reflection.location}
 
@@ -456,10 +727,7 @@ async function appendToDailyNote(
 			"{{type}}",
 			firstLetterUppercase(reflection.type)
 		);
-		reflectionContent = reflectionContent.replace(
-			"{{source}}",
-			reflection.source
-		);
+		reflectionContent = reflectionContent.replace("{{source}}", sourceFile);
 		reflectionContent = reflectionContent.replace(
 			"{{author}}",
 			reflection.author
@@ -476,7 +744,7 @@ async function appendToDailyNote(
 			"{{dailyReflectionContent}}",
 			`> "${reflection.quote}"\n\n**${firstLetterUppercase(
 				reflection.type
-			)}:** [[${reflection.source}]]\n**Author:** [[${
+			)}:** [[${sourceFile}]]\n**Author:** [[${
 				reflection.author
 			}]]\n**Location:** ${reflection.location}\n\n**Note:** ${
 				reflection.note
@@ -523,6 +791,7 @@ async function fetchDailyReflection(plugin: Unearthed) {
 	return {
 		type: data.dailyReflection.source.type,
 		source: data.dailyReflection.source.title,
+		sourceId: data.dailyReflection.source.id,
 		author: data.dailyReflection.source.author,
 		quote: data.dailyReflection.quote.content,
 		note: data.dailyReflection.quote.note,
@@ -671,6 +940,23 @@ class UnearthedSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Manual tag sync")
+			.setDesc("Manually link tags to source files")
+			.addButton((button) =>
+				button.setButtonText("Link Tags").onClick(async () => {
+					new Notice("Syncing and linking tags, please wait...");
+
+					await syncData(this.plugin, false);
+					const tagsData = await fetchTags(this.plugin);
+
+					if (tagsData && tagsData.length > 0) {
+						await applyTags(this.plugin, tagsData);
+					}
+					new Notice("Tags linked to sources successfully");
+				})
+			);
+
+		new Setting(containerEl)
 			.setName("Filename template")
 			.setDesc(
 				"The template used to format the filename for each source(book). Press 'Insert Options' to append the available options."
@@ -731,6 +1017,11 @@ class UnearthedSettingTab extends PluginSettingTab {
 				button.setButtonText("Insert Options").onClick(async () => {
 					for (const option of SOURCE_TEMPLATE_OPTIONS) {
 						this.plugin.settings.sourceTemplate += `{{${option}}}\n`;
+
+						if (option == "createdAt") {
+							this.plugin.settings.sourceTemplate +=
+								"{{createdAt|date:YYYY-MM-DD}}\n";
+						}
 					}
 					await this.plugin.saveSettings();
 					this.display();
@@ -791,6 +1082,23 @@ class UnearthedSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						}).inputEl.style.height = "200px")
 			);
+
+		new Setting(containerEl)
+			.setName("Root folder")
+			.setDesc(
+				"The root folder where all Unearthed content will be stored"
+			)
+			.addSearch((cb) => {
+				cb.setPlaceholder("Default: Unearthed")
+					.setValue(this.plugin.settings.rootFolder)
+					.onChange(async (newFolder) => {
+						this.plugin.settings.rootFolder =
+							newFolder || "Unearthed";
+						await this.plugin.saveSettings();
+					});
+				cb.inputEl.type = "text";
+				cb.inputEl.setAttribute("data-type", "folder");
+			});
 
 		new Setting(containerEl)
 			.setName("Last auto sync date")

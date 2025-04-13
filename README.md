@@ -4,6 +4,7 @@ Unearthed.app is a free service that seamlessly syncs your Kindle highlights and
 A **Daily Reflection** is served to you that consists of a quote, your note, book, author and location. This plugin allows you to use custom templates determine how book will appear in Obsidian.
 
 Currently, Unearthed supports syncing with:
+
 - **Obsidian** (via this plugin)
 - **Notion**
 - **Capacities**
@@ -14,15 +15,21 @@ Currently, Unearthed supports syncing with:
 
 Looking to expand support to more sources and offer additional integrations in the future.
 
+## Tags
+
+**Premium** Unearthed users can now also sync their Tags. This will automatically create tag files in Obsidian and link them to your books.
+
 ## Video Tutorial (follow along)
+
 [![Video Tutorial](https://img.youtube.com/vi/uilUlt4wRVs/maxresdefault.jpg)](https://www.youtube.com/watch?v=uilUlt4wRVs)
 
 ## Daily Reflection
+
 ![image](https://github.com/user-attachments/assets/e0bb8af3-1d8c-4037-a38a-89a339b371f4)
 
 ## All Quotes and Notes Synced
-![image](https://github.com/user-attachments/assets/50bd5fc9-c13e-4c8c-86db-ddba0a88a4cd)
 
+![image](https://github.com/user-attachments/assets/50bd5fc9-c13e-4c8c-86db-ddba0a88a4cd)
 
 ## How to Sync Your Kindle Books with Obsidian
 
