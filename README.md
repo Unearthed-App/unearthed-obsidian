@@ -14,6 +14,10 @@ Currently, Unearthed supports syncing with:
 
 Looking to expand support to more sources and offer additional integrations in the future.
 
+## Tags
+
+**Premium** Unearthed users can now also sync their Tags. This will automatically create tag files in Obsidian and link them to your books.
+
 ## Video Tutorial (follow along)
 [![Video Tutorial](https://img.youtube.com/vi/uilUlt4wRVs/maxresdefault.jpg)](https://www.youtube.com/watch?v=uilUlt4wRVs)
 
