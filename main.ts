@@ -23,6 +23,7 @@ interface UnearthedSettings {
 	lastSyncDate: string;
 	dailyReflectionTemplate: string;
 	secret: string;
+	rootFolder: string;
 }
 
 const QUOTE_TEMPLATE_EXAMPLE = `
@@ -75,6 +76,7 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	lastSyncDate: "",
 	dailyReflectionTemplate: "",
 	secret: "",
+	rootFolder: "Unearthed",
 };
 
 interface UnearthedData {
@@ -265,7 +267,7 @@ async function fetchTags(plugin: Unearthed) {
 }
 
 async function applyData(plugin: Unearthed, data: UnearthedData[]) {
-	const parentFolderPath = `Unearthed/`;
+	const parentFolderPath = `${plugin.settings.rootFolder}/`;
 
 	try {
 		const abstractFile =
@@ -317,38 +319,39 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		}]]\n\n**Source:** ${firstLetterUppercase(item.origin)}\n\n`;
 
 		if (plugin.settings.sourceTemplate) {
-			fileContent = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
-				const value = item[key as keyof UnearthedData] ?? "";
-				const stringValue =
-					typeof value === "string" ? value : String(value);
+			fileContent =
+				SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
+					const value = item[key as keyof UnearthedData] ?? "";
+					const stringValue =
+						typeof value === "string" ? value : String(value);
 
-				if (key.startsWith("createdAt")) {
-					const createdAtValues = acc.match(
-						/{{createdAt(\w*|\|date:\w*-\w*-\w*)}}/g
-					);
+					if (key.startsWith("createdAt")) {
+						const createdAtValues = acc.match(
+							/{{createdAt(\w*|\|date:\w*-\w*-\w*)}}/g
+						);
 
-					if (createdAtValues) {
-						for (const template of createdAtValues) {
-							if (template.includes("|date:")) {
-								const format =
-									template.match(/\|date:(.+?)}}/)?.[1];
-								const formattedDate = window
-									.moment(stringValue)
-									.format(format);
-								acc = acc.replace(template, formattedDate);
-							} else {
-								acc = acc.replace(template, stringValue);
+						if (createdAtValues) {
+							for (const template of createdAtValues) {
+								if (template.includes("|date:")) {
+									const format =
+										template.match(/\|date:(.+?)}}/)?.[1];
+									const formattedDate = window
+										.moment(stringValue)
+										.format(format);
+									acc = acc.replace(template, formattedDate);
+								} else {
+									acc = acc.replace(template, stringValue);
+								}
 							}
+							return acc;
 						}
-						return acc;
+					} else {
+						return acc.replace(
+							new RegExp(`{{${key}}}`, "g"),
+							stringValue
+						);
 					}
-				} else {
-					return acc.replace(
-						new RegExp(`{{${key}}}`, "g"),
-						stringValue
-					);
-				}
-			}, plugin.settings.sourceTemplate) ?? '';
+				}, plugin.settings.sourceTemplate) ?? "";
 		}
 
 		let existingQuotes: string[] = [];
@@ -432,7 +435,7 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 }
 
 async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
-	const parentFolderPath = `Unearthed/Tags/`;
+	const parentFolderPath = `${plugin.settings.rootFolder}/Tags/`;
 
 	try {
 		const abstractFile =
@@ -468,8 +471,8 @@ async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
 		if (tag.sourceIds && tag.sourceIds.length > 0) {
 			fileContent += `## Sources\n\n`;
 
-			// Try to find source files in the Unearthed directory
-			const sourcesFolder = `Unearthed/`;
+			// Try to find source files in the root directory
+			const sourcesFolder = `${plugin.settings.rootFolder}/`;
 			const sourceFolders = await plugin.app.vault.adapter.list(
 				sourcesFolder
 			);
@@ -506,7 +509,7 @@ async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
 												"Unknown";
 
 											// Make sure we're not adding a tag file as a source
-											if (!folder.includes("Tags")) {
+											if (!folder.includes(`Tags`)) {
 												foundSources.push(
 													`- [[${fileName}]]\n`
 												);
@@ -577,7 +580,9 @@ async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
 }
 
 async function listFolders(plugin: Unearthed) {
-	const folders = await plugin.app.vault.adapter.list("Unearthed/");
+	const folders = await plugin.app.vault.adapter.list(
+		`${plugin.settings.rootFolder}/`
+	);
 	return folders.folders;
 }
 
@@ -585,7 +590,7 @@ async function fileExists(plugin: Unearthed, fileName: string) {
 	const listOfFolders = await listFolders(plugin);
 
 	const filteredFolders = listOfFolders.filter(
-		(folder) => folder !== "Unearthed/Tags"
+		(folder) => folder !== `${plugin.settings.rootFolder}/Tags`
 	);
 
 	let counter = 1;
@@ -1077,6 +1082,23 @@ class UnearthedSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						}).inputEl.style.height = "200px")
 			);
+
+		new Setting(containerEl)
+			.setName("Root folder")
+			.setDesc(
+				"The root folder where all Unearthed content will be stored"
+			)
+			.addSearch((cb) => {
+				cb.setPlaceholder("Default: Unearthed")
+					.setValue(this.plugin.settings.rootFolder)
+					.onChange(async (newFolder) => {
+						this.plugin.settings.rootFolder =
+							newFolder || "Unearthed";
+						await this.plugin.saveSettings();
+					});
+				cb.inputEl.type = "text";
+				cb.inputEl.setAttribute("data-type", "folder");
+			});
 
 		new Setting(containerEl)
 			.setName("Last auto sync date")
