@@ -1,6 +1,6 @@
 {
 	"name": "unearthed-app-plugin",
-	"version": "1.5.0",
+	"version": "1.5.1",
 	"description": "Auto Sync Kindle Highlights and Daily Reflection via Unearthed (https://unearthed.app)",
 	"main": "main.js",
 	"scripts": {
