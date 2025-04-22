@@ -9,6 +9,10 @@ import {
 	TFolder,
 } from "obsidian";
 
+type QuoteColorMode = "none" | "background" | "text";
+
+type ColorKey = "yellow" | "blue" | "pink" | "orange";
+
 interface UnearthedSettings {
 	unearthedApiKey: string;
 	autoSync: boolean;
@@ -24,6 +28,8 @@ interface UnearthedSettings {
 	dailyReflectionTemplate: string;
 	secret: string;
 	rootFolder: string;
+	quoteColorMode: QuoteColorMode;
+	customColors: Record<ColorKey, string>;
 }
 
 const QUOTE_TEMPLATE_EXAMPLE = `
@@ -32,6 +38,7 @@ const QUOTE_TEMPLATE_EXAMPLE = `
 
 **Note:** {{note}}
 **Location:** {{location}}
+**Color:** {{color}}
 `;
 
 const DAILY_REFLECTION_TEMPLATE_EXAMPLE = `
@@ -62,6 +69,13 @@ const sourceIdToFileName = new Map<string, string>();
 
 const HIDDEN_CHAR = "\u200B";
 
+const DEFAULT_COLOR_MAP: Record<string, string> = {
+	yellow: "#ffd700",
+	blue: "#4682b4",
+	pink: "#ff69b4",
+	orange: "#ffa500",
+};
+
 const DEFAULT_SETTINGS: UnearthedSettings = {
 	unearthedApiKey: "",
 	autoSync: false,
@@ -77,6 +91,13 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	dailyReflectionTemplate: "",
 	secret: "",
 	rootFolder: "Unearthed",
+	quoteColorMode: "background",
+	customColors: {
+		yellow: DEFAULT_COLOR_MAP.yellow,
+		blue: DEFAULT_COLOR_MAP.blue,
+		pink: DEFAULT_COLOR_MAP.pink,
+		orange: DEFAULT_COLOR_MAP.orange,
+	},
 };
 
 interface UnearthedData {
@@ -122,6 +143,7 @@ interface DailyReflection {
 	quote: string;
 	note: string;
 	location: string;
+	color: string;
 }
 
 interface SafeFileNameOptions {
@@ -388,9 +410,41 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 				const hiddenContent = `${HIDDEN_CHAR}${quote.content}${HIDDEN_CHAR}`;
 
 				if (!existingQuotes.includes(quote.content)) {
+					let styledContent = hiddenContent;
+					if (
+						plugin.settings.quoteColorMode !== "none" &&
+						quote.color
+					) {
+						const colorLower = quote.color.toLowerCase();
+						let colorHex = "";
+
+						for (const colorKey of Object.keys(
+							DEFAULT_COLOR_MAP
+						) as ColorKey[]) {
+							if (colorLower.includes(colorKey)) {
+								colorHex =
+									plugin.settings.customColors[colorKey] ||
+									DEFAULT_COLOR_MAP[colorKey];
+								break;
+							}
+						}
+
+						if (colorHex) {
+							if (
+								plugin.settings.quoteColorMode === "background"
+							) {
+								styledContent = `<div style="background-color: ${colorHex}; padding: 12px;">${hiddenContent}</div>`;
+							} else if (
+								plugin.settings.quoteColorMode === "text"
+							) {
+								styledContent = `<span style="color: ${colorHex};">${hiddenContent}</span>`;
+							}
+						}
+					}
+
 					gotTemplate = gotTemplate.replace(
 						"{{content}}",
-						hiddenContent
+						styledContent
 					);
 					if (quote.note) {
 						gotTemplate = gotTemplate.replace(
@@ -404,17 +458,61 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 						"{{location}}",
 						quote.location
 					);
+					if (quote.color) {
+						gotTemplate = gotTemplate.replace(
+							"{{color}}",
+							quote.color
+						);
+					} else {
+						gotTemplate = gotTemplate.replace("{{color}}", "");
+					}
 					updatedFileContent += "\n" + gotTemplate;
 				}
 			}
 		} else {
 			for (const quote of item.quotes) {
 				if (!existingQuotes.includes(quote.content)) {
-					updatedFileContent += `---\n\n> ${quote.content}\n\n`;
+					let styledContent = `> ${quote.content}`;
+
+					if (
+						plugin.settings.quoteColorMode !== "none" &&
+						quote.color
+					) {
+						const colorLower = quote.color.toLowerCase();
+						let colorHex = "";
+
+						for (const colorKey of Object.keys(
+							DEFAULT_COLOR_MAP
+						) as ColorKey[]) {
+							if (colorLower.includes(colorKey)) {
+								colorHex =
+									plugin.settings.customColors[colorKey] ||
+									DEFAULT_COLOR_MAP[colorKey];
+								break;
+							}
+						}
+
+						if (colorHex) {
+							if (
+								plugin.settings.quoteColorMode === "background"
+							) {
+								styledContent = `> <div style="background-color: ${colorHex}; padding: 12px;">${quote.content}</div>`;
+							} else if (
+								plugin.settings.quoteColorMode === "text"
+							) {
+								styledContent = `> <span style="color: ${colorHex};">${quote.content}</span>`;
+							}
+						}
+					}
+
+					updatedFileContent += `---\n\n${styledContent}\n\n`;
 					if (quote.note) {
 						updatedFileContent += `**Note:** ${quote.note}\n\n`;
 					}
 					updatedFileContent += `**Location:** ${quote.location}\n\n`;
+					if (quote.color) {
+						updatedFileContent += `**Color:** ${quote.color}\n\n`;
+					}
 				}
 			}
 		}
@@ -684,6 +782,8 @@ async function getAndAppendDailyReflection(plugin: Unearthed) {
 	}
 }
 
+
+
 async function appendToDailyNote(
 	plugin: Unearthed,
 	filePath: string,
@@ -702,11 +802,35 @@ async function appendToDailyNote(
 	const sourceFile =
 		sourceIdToFileName.get(reflection.sourceId) || reflection.source;
 
+	let styledQuote = reflection.quote;
+
+	if (plugin.settings.quoteColorMode !== "none" && reflection.color) {
+		const colorLower = reflection.color.toLowerCase();
+		let colorHex = "";
+
+		for (const colorKey of Object.keys(DEFAULT_COLOR_MAP) as ColorKey[]) {
+			if (colorLower.includes(colorKey)) {
+				colorHex =
+					plugin.settings.customColors[colorKey] ||
+					DEFAULT_COLOR_MAP[colorKey];
+				break;
+			}
+		}
+
+		if (colorHex) {
+			if (plugin.settings.quoteColorMode === "background") {
+				styledQuote = `<div style="background-color: ${colorHex}; padding: 12px;">${reflection.quote}</div>`;
+			} else if (plugin.settings.quoteColorMode === "text") {
+				styledQuote = `<span style="color: ${colorHex};">${reflection.quote}</span>`;
+			}
+		}
+	}
+
 	let reflectionContent = `
 ---
 ## Daily Reflection
 
-> "${reflection.quote}"
+> "${styledQuote}"
 
 **${firstLetterUppercase(reflection.type)}:** [[${sourceFile}]]
 **Author:** [[${reflection.author}]]
@@ -719,10 +843,7 @@ async function appendToDailyNote(
 
 	if (plugin.settings.dailyReflectionTemplate) {
 		reflectionContent = plugin.settings.dailyReflectionTemplate;
-		reflectionContent = reflectionContent.replace(
-			"{{quote}}",
-			reflection.quote
-		);
+		reflectionContent = reflectionContent.replace("{{quote}}", styledQuote);
 		reflectionContent = reflectionContent.replace(
 			"{{type}}",
 			firstLetterUppercase(reflection.type)
@@ -742,7 +863,7 @@ async function appendToDailyNote(
 		);
 		reflectionContent = reflectionContent.replace(
 			"{{dailyReflectionContent}}",
-			`> "${reflection.quote}"\n\n**${firstLetterUppercase(
+			`> "${styledQuote}"\n\n**${firstLetterUppercase(
 				reflection.type
 			)}:** [[${sourceFile}]]\n**Author:** [[${
 				reflection.author
@@ -796,8 +917,10 @@ async function fetchDailyReflection(plugin: Unearthed) {
 		quote: data.dailyReflection.quote.content,
 		note: data.dailyReflection.quote.note,
 		location: data.dailyReflection.quote.location,
+		color: data.dailyReflection.quote.color || "",
 	} as DailyReflection;
 }
+
 
 function extractExistingQuotes(fileContent: string): string[] {
 	const quoteRegex = />\s(.+?)\n/g;
@@ -1040,7 +1163,7 @@ class UnearthedSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Quote template")
 			.setDesc(
-				"The template used to format each individual quote/note. Placeholders: {{quote}}, {{note}}, {{location}}. Press 'Insert Template' button for an example."
+				"The template used to format each individual quote/note. Placeholders: {{content}}, {{note}}, {{location}}, {{color}}. Press 'Insert Template' button for an example."
 			)
 			.addButton((button) =>
 				button.setButtonText("Insert Template").onClick(async () => {
@@ -1099,6 +1222,63 @@ class UnearthedSettingTab extends PluginSettingTab {
 				cb.inputEl.type = "text";
 				cb.inputEl.setAttribute("data-type", "folder");
 			});
+
+		const quoteColorSetting = new Setting(containerEl)
+			.setName("Quote color styling")
+			.setDesc(
+				"Choose how to apply color styling to quotes based on their highlight color"
+			);
+
+		quoteColorSetting.addDropdown((dropdown) => {
+			dropdown
+				.addOption("none", "No color styling")
+				.addOption("background", "Apply as background color")
+				.addOption("text", "Apply as text color")
+				.setValue(this.plugin.settings.quoteColorMode)
+				.onChange(async (value: QuoteColorMode) => {
+					this.plugin.settings.quoteColorMode = value;
+					await this.plugin.saveSettings();
+				});
+		});
+
+		new Setting(containerEl)
+			.setName("Custom highlight colors")
+			.setDesc("Customize the colors used for each highlight type");
+
+		const colorNames: ColorKey[] = ["yellow", "blue", "pink", "orange"];
+		for (const colorName of colorNames) {
+			new Setting(containerEl)
+				.setName(
+					`${
+						colorName.charAt(0).toUpperCase() + colorName.slice(1)
+					} highlight`
+				)
+				.addText((text) => {
+					const input = text
+						.setPlaceholder(DEFAULT_COLOR_MAP[colorName])
+						.setValue(this.plugin.settings.customColors[colorName])
+						.onChange(async (value) => {
+							this.plugin.settings.customColors[colorName] =
+								value;
+							await this.plugin.saveSettings();
+						});
+
+					input.inputEl.type = "color";
+					input.inputEl.style.width = "50px";
+					input.inputEl.style.height = "24px";
+
+					const resetButton = createEl("button");
+					resetButton.textContent = "Reset";
+					resetButton.style.marginLeft = "10px";
+					resetButton.addEventListener("click", async () => {
+						this.plugin.settings.customColors[colorName] =
+							DEFAULT_COLOR_MAP[colorName];
+						input.setValue(DEFAULT_COLOR_MAP[colorName]);
+						await this.plugin.saveSettings();
+					});
+					input.inputEl.parentElement?.appendChild(resetButton);
+				});
+		}
 
 		new Setting(containerEl)
 			.setName("Last auto sync date")
