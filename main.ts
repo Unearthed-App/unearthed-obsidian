@@ -168,18 +168,20 @@ export default class Unearthed extends Plugin {
 					.moment(this.settings.lastSyncDate, "YYYY-MM-DD")
 					.isSame(window.moment(), "day")
 			) {
-				if (this.settings.addDailyReflection) {
-					await getAndAppendDailyReflection(this);
-				}
+				try {
+					if (this.settings.addDailyReflection) {
+						await getAndAppendDailyReflection(this);
+					}
 
-				if (this.settings.autoSync) {
-					new Notice("Unearthed Sync started, please wait...");
-					await syncData(this);
-					new Notice("Unearthed Sync complete");
-
-					this.settings.lastSyncDate = currentDate;
-
-					await this.saveSettings();
+					if (this.settings.autoSync) {
+						new Notice("Unearthed Sync started, please wait...");
+						this.performBackgroundSync(currentDate);
+					}
+				} catch (error) {
+					console.error("Error during startup sync:", error);
+					new Notice(
+						"Unearthed startup sync failed. Check console for details."
+					);
 				}
 			}
 		});
@@ -196,6 +198,18 @@ export default class Unearthed extends Plugin {
 
 	onunload() {}
 
+	async performBackgroundSync(currentDate: string) {
+		try {
+			await syncData(this);
+			new Notice("Unearthed Sync complete");
+			this.settings.lastSyncDate = currentDate;
+			await this.saveSettings();
+		} catch (error) {
+			console.error("Background sync failed:", error);
+			new Notice("Unearthed Sync failed. Check console for details.");
+		}
+	}
+
 	async loadSettings() {
 		this.settings = Object.assign(
 			{},
@@ -210,14 +224,19 @@ export default class Unearthed extends Plugin {
 }
 
 async function syncData(plugin: Unearthed, applyTheData = true) {
-	await checkConnection(plugin);
 	try {
+		await checkConnection(plugin);
+
+		new Notice("Fetching sources...");
 		const { data } = await fetchSources(plugin);
+
+		new Notice("Fetching tags...");
 		const tagsData = await fetchTags(plugin);
 
 		sourceIdToFileName.clear();
 
 		if (data && data.length > 0) {
+			new Notice(`Processing ${data.length} sources...`);
 			for (const item of data) {
 				const fileName = SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
 					const value = item[key as keyof UnearthedData];
@@ -234,31 +253,50 @@ async function syncData(plugin: Unearthed, applyTheData = true) {
 			}
 
 			if (applyTheData) {
+				new Notice("Creating/updating source files...");
 				await applyData(plugin, data);
 			}
 		}
 
 		if (tagsData && tagsData.length > 0) {
 			if (applyTheData) {
+				new Notice(`Processing ${tagsData.length} tags...`);
 				await applyTags(plugin, tagsData);
 			}
 		}
 	} catch (error) {
-		// error
+		console.error("Sync error:", error);
+		new Notice("Sync failed. Check console for details.");
+		throw error;
 	}
+}
+
+async function requestWithTimeout(
+	requestParams: Parameters<typeof requestUrl>[0],
+	timeoutMs = 30000
+) {
+	return Promise.race([
+		requestUrl(requestParams),
+		new Promise((_, reject) =>
+			setTimeout(() => reject(new Error("Request timeout")), timeoutMs)
+		),
+	]);
 }
 
 async function fetchSources(plugin: Unearthed) {
 	const settings = plugin.settings;
 
-	const response = await requestUrl({
-		url: "https://unearthed.app/api/public/obsidian-get",
-		method: "GET",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+	const response = (await requestWithTimeout(
+		{
+			url: "https://unearthed.app/api/public/obsidian-get",
+			method: "GET",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+			},
 		},
-	});
+		30000
+	)) as { json: { data: UnearthedData[] } };
 
 	return response.json;
 }
@@ -267,14 +305,17 @@ async function fetchTags(plugin: Unearthed) {
 	const settings = plugin.settings;
 
 	try {
-		const response = await requestUrl({
-			url: "https://unearthed.app/api/public/obsidian-get-tags",
-			method: "GET",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+		const response = (await requestWithTimeout(
+			{
+				url: "https://unearthed.app/api/public/obsidian-get-tags",
+				method: "GET",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+				},
 			},
-		});
+			30000
+		)) as { json: { success: boolean; data: UnearthedTagData[] } };
 
 		const tagsResponse = response.json;
 
@@ -284,6 +325,7 @@ async function fetchTags(plugin: Unearthed) {
 			return [];
 		}
 	} catch (error) {
+		console.error("Error fetching tags:", error);
 		return [];
 	}
 }
@@ -323,7 +365,13 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 		}
 	}
 
-	for (const item of data) {
+	for (let i = 0; i < data.length; i++) {
+		const item = data[i];
+
+		if (i % 5 === 0) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+
 		const folderPath = `${parentFolderPath}${firstLetterUppercase(
 			item.type
 		)}s/`;
@@ -545,7 +593,13 @@ async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
 		// No folder created
 	}
 
-	for (const tag of data) {
+	for (let i = 0; i < data.length; i++) {
+		const tag = data[i];
+
+		if (i % 3 === 0) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+
 		let fileName = toSafeFileName(plugin, tag.title);
 		fileName = await fileExists(plugin, fileName);
 
@@ -717,14 +771,17 @@ async function checkConnection(plugin: Unearthed) {
 
 	if (!plugin.settings.secret) {
 		try {
-			const connectResults = await requestUrl({
-				url: "https://unearthed.app/api/public/connect",
-				method: "GET",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${plugin.settings.unearthedApiKey}`,
+			const connectResults = (await requestWithTimeout(
+				{
+					url: "https://unearthed.app/api/public/connect",
+					method: "GET",
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${plugin.settings.unearthedApiKey}`,
+					},
 				},
-			});
+				15000
+			)) as { status: number; json: { data: { secret: string } } };
 
 			if (connectResults.status === 200) {
 				plugin.settings.secret = connectResults.json.data.secret;
@@ -739,50 +796,60 @@ async function checkConnection(plugin: Unearthed) {
 					"Failed to connect to Unearthed. Status:",
 					connectResults.status
 				);
+				throw new Error(
+					`Connection failed with status: ${connectResults.status}`
+				);
 			}
 		} catch (error) {
-			new Notice("Could not connect to Unearthed.");
+			new Notice(
+				"Could not connect to Unearthed. Check your API key and internet connection."
+			);
 			console.error("Error connecting to Unearthed:", error);
+			throw error;
 		}
 	}
 }
 
 async function getAndAppendDailyReflection(plugin: Unearthed) {
-	await checkConnection(plugin);
-	if (!plugin.settings.dailyReflectionLocation) {
-		new Notice("Please specify a Daily Note folder location");
-		return;
-	}
-
-	if (!plugin.settings.dailyReflectionDateFormat) {
-		new Notice("Please specify a Daily Note date format");
-		return;
-	}
-
-	await syncData(plugin, false);
-
-	const dailyReflection = await fetchDailyReflection(plugin);
-
-	if (!dailyReflection) {
-		return;
-	}
-
-	const formattedDate = window
-		.moment(new Date())
-		.format(plugin.settings.dailyReflectionDateFormat);
-
-	const filePath = `${plugin.settings.dailyReflectionLocation}/${formattedDate}.md`;
-
 	try {
-		await appendToDailyNote(plugin, filePath, dailyReflection);
-		new Notice("Daily reflection added successfully");
+		await checkConnection(plugin);
+		if (!plugin.settings.dailyReflectionLocation) {
+			new Notice("Please specify a Daily Note folder location");
+			return;
+		}
+
+		if (!plugin.settings.dailyReflectionDateFormat) {
+			new Notice("Please specify a Daily Note date format");
+			return;
+		}
+
+		await syncData(plugin, false);
+
+		const dailyReflection = await fetchDailyReflection(plugin);
+
+		if (!dailyReflection) {
+			new Notice("No daily reflection available");
+			return;
+		}
+
+		const formattedDate = window
+			.moment(new Date())
+			.format(plugin.settings.dailyReflectionDateFormat);
+
+		const filePath = `${plugin.settings.dailyReflectionLocation}/${formattedDate}.md`;
+
+		try {
+			await appendToDailyNote(plugin, filePath, dailyReflection);
+			new Notice("Daily reflection added successfully");
+		} catch (error) {
+			console.error("Error appending daily reflection:", error);
+			new Notice("Failed to add daily reflection");
+		}
 	} catch (error) {
-		console.error("Error appending daily reflection:", error);
-		new Notice("Failed to add daily reflection");
+		console.error("Error in getAndAppendDailyReflection:", error);
+		new Notice("Daily reflection sync failed. Check console for details.");
 	}
 }
-
-
 
 async function appendToDailyNote(
 	plugin: Unearthed,
@@ -894,14 +961,36 @@ async function appendToDailyNote(
 async function fetchDailyReflection(plugin: Unearthed) {
 	const settings = plugin.settings;
 
-	const response = await requestUrl({
-		url: "https://unearthed.app/api/public/daily-reflection",
-		method: "GET",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+	const response = (await requestWithTimeout(
+		{
+			url: "https://unearthed.app/api/public/daily-reflection",
+			method: "GET",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+			},
 		},
-	});
+		30000
+	)) as {
+		json: {
+			data: {
+				dailyReflection: {
+					source: {
+						type: string;
+						title: string;
+						id: string;
+						author: string;
+					};
+					quote: {
+						content: string;
+						note: string;
+						location: string;
+						color?: string;
+					};
+				};
+			};
+		};
+	};
 
 	const { data } = response.json;
 
@@ -920,7 +1009,6 @@ async function fetchDailyReflection(plugin: Unearthed) {
 		color: data.dailyReflection.quote.color || "",
 	} as DailyReflection;
 }
-
 
 function extractExistingQuotes(fileContent: string): string[] {
 	const quoteRegex = />\s(.+?)\n/g;
