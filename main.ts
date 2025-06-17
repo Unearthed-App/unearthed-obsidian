@@ -186,12 +186,16 @@ export default class Unearthed extends Plugin {
 			}
 		});
 
-		this.addRibbonIcon("book", "Kindle (Unearthed) Sync", async () => {
-			new Notice("Unearthed Sync started, please wait...");
-			await getAndAppendDailyReflection(this);
-			await syncData(this);
-			new Notice("Unearthed Sync complete");
-		});
+		this.addRibbonIcon(
+			"book",
+			"Kindle/KOReader (Unearthed) Sync",
+			async () => {
+				new Notice("Unearthed Sync started, please wait...");
+				await getAndAppendDailyReflection(this);
+				await syncData(this);
+				new Notice("Unearthed Sync complete");
+			}
+		);
 
 		this.addSettingTab(new UnearthedSettingTab(this.app, this));
 	}
