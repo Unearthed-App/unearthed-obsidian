@@ -1,6 +1,6 @@
 {
 	"name": "unearthed-app-plugin",
-	"version": "1.5.3",
+	"version": "1.5.4",
 	"description": "Auto Sync Auto Sync Kindle/KOReader Highlights and Daily Reflection via Unearthed (https://unearthed.app)",
 	"main": "main.js",
 	"scripts": {
