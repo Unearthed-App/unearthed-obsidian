@@ -277,7 +277,7 @@ async function syncData(plugin: Unearthed, applyTheData = true) {
 
 async function requestWithTimeout(
 	requestParams: Parameters<typeof requestUrl>[0],
-	timeoutMs = 30000
+	timeoutMs = 60000
 ) {
 	return Promise.race([
 		requestUrl(requestParams),
@@ -299,7 +299,7 @@ async function fetchSources(plugin: Unearthed) {
 				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
 			},
 		},
-		30000
+		60000
 	)) as { json: { data: UnearthedData[] } };
 
 	return response.json;
@@ -318,7 +318,7 @@ async function fetchTags(plugin: Unearthed) {
 					Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
 				},
 			},
-			30000
+			60000
 		)) as { json: { success: boolean; data: UnearthedTagData[] } };
 
 		const tagsResponse = response.json;
@@ -783,8 +783,7 @@ async function checkConnection(plugin: Unearthed) {
 						"Content-Type": "application/json",
 						Authorization: `Bearer ${plugin.settings.unearthedApiKey}`,
 					},
-				},
-				15000
+				}
 			)) as { status: number; json: { data: { secret: string } } };
 
 			if (connectResults.status === 200) {
@@ -974,7 +973,7 @@ async function fetchDailyReflection(plugin: Unearthed) {
 				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
 			},
 		},
-		30000
+		60000
 	)) as {
 		json: {
 			data: {
