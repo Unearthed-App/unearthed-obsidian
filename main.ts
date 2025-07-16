@@ -15,6 +15,7 @@ type ColorKey = "yellow" | "blue" | "pink" | "orange";
 
 interface UnearthedSettings {
 	unearthedApiKey: string;
+	unearthedUserId: string;
 	autoSync: boolean;
 	dailyReflectionDateFormat: string;
 	dailyReflectionLocation: string;
@@ -26,7 +27,6 @@ interface UnearthedSettings {
 	sourceFilenameReplaceSpaces: string;
 	lastSyncDate: string;
 	dailyReflectionTemplate: string;
-	secret: string;
 	rootFolder: string;
 	quoteColorMode: QuoteColorMode;
 	customColors: Record<ColorKey, string>;
@@ -78,6 +78,7 @@ const DEFAULT_COLOR_MAP: Record<string, string> = {
 
 const DEFAULT_SETTINGS: UnearthedSettings = {
 	unearthedApiKey: "",
+	unearthedUserId: "",
 	autoSync: false,
 	dailyReflectionDateFormat: "YYYY-MM-DD",
 	dailyReflectionLocation: "Daily Notes",
@@ -89,7 +90,6 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	sourceFilenameReplaceSpaces: "-",
 	lastSyncDate: "",
 	dailyReflectionTemplate: "",
-	secret: "",
 	rootFolder: "Unearthed",
 	quoteColorMode: "background",
 	customColors: {
@@ -229,8 +229,6 @@ export default class Unearthed extends Plugin {
 
 async function syncData(plugin: Unearthed, applyTheData = true) {
 	try {
-		await checkConnection(plugin);
-
 		new Notice("Fetching sources...");
 		const { data } = await fetchSources(plugin);
 
@@ -292,11 +290,11 @@ async function fetchSources(plugin: Unearthed) {
 
 	const response = (await requestWithTimeout(
 		{
-			url: "https://unearthed.app/api/public/obsidian-get",
+			url: "https://unearthed.app/api/public/obs-obsidian-get",
 			method: "GET",
 			headers: {
 				"Content-Type": "application/json",
-				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.unearthedUserId}`,
 			},
 		},
 		80000
@@ -311,11 +309,11 @@ async function fetchTags(plugin: Unearthed) {
 	try {
 		const response = (await requestWithTimeout(
 			{
-				url: "https://unearthed.app/api/public/obsidian-get-tags",
+				url: "https://unearthed.app/api/public/obs-obsidian-get-tags",
 				method: "GET",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+					Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.unearthedUserId}`,
 				},
 			},
 			80000
@@ -770,52 +768,8 @@ async function fileExists(plugin: Unearthed, fileName: string) {
 	return fileName;
 }
 
-async function checkConnection(plugin: Unearthed) {
-	new Notice("Checking connection...");
-
-	if (!plugin.settings.secret) {
-		try {
-			const connectResults = (await requestWithTimeout(
-				{
-					url: "https://unearthed.app/api/public/connect",
-					method: "GET",
-					headers: {
-						"Content-Type": "application/json",
-						Authorization: `Bearer ${plugin.settings.unearthedApiKey}`,
-					},
-				}
-			)) as { status: number; json: { data: { secret: string } } };
-
-			if (connectResults.status === 200) {
-				plugin.settings.secret = connectResults.json.data.secret;
-				await plugin.saveSettings();
-				new Notice("Connected successfully!");
-			} else {
-				new Notice(
-					"Failed to connect to Unearthed. Status: " +
-						connectResults.status
-				);
-				console.error(
-					"Failed to connect to Unearthed. Status:",
-					connectResults.status
-				);
-				throw new Error(
-					`Connection failed with status: ${connectResults.status}`
-				);
-			}
-		} catch (error) {
-			new Notice(
-				"Could not connect to Unearthed. Check your API key and internet connection."
-			);
-			console.error("Error connecting to Unearthed:", error);
-			throw error;
-		}
-	}
-}
-
 async function getAndAppendDailyReflection(plugin: Unearthed) {
 	try {
-		await checkConnection(plugin);
 		if (!plugin.settings.dailyReflectionLocation) {
 			new Notice("Please specify a Daily Note folder location");
 			return;
@@ -966,11 +920,11 @@ async function fetchDailyReflection(plugin: Unearthed) {
 
 	const response = (await requestWithTimeout(
 		{
-			url: "https://unearthed.app/api/public/daily-reflection",
+			url: "https://unearthed.app/api/public/obs-daily-reflection",
 			method: "GET",
 			headers: {
 				"Content-Type": "application/json",
-				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.secret}`,
+				Authorization: `Bearer ${settings.unearthedApiKey}~~~${settings.unearthedUserId}`,
 			},
 		},
 		80000
@@ -1073,7 +1027,19 @@ class UnearthedSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.unearthedApiKey)
 					.onChange(async (value) => {
 						this.plugin.settings.unearthedApiKey = value;
-						this.plugin.settings.secret = "";
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Unearthed User ID")
+			.setDesc("Copy and paste your Unearthed user ID from unearthed.app")
+			.addText((text) =>
+				text
+					.setPlaceholder("Enter your User ID")
+					.setValue(this.plugin.settings.unearthedUserId)
+					.onChange(async (value) => {
+						this.plugin.settings.unearthedUserId = value;
 						await this.plugin.saveSettings();
 					})
 			);
