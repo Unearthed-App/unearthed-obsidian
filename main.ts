@@ -11,7 +11,17 @@ import {
 
 type QuoteColorMode = "none" | "background" | "text";
 
-type ColorKey = "yellow" | "blue" | "pink" | "orange";
+type ColorKey =
+	| "yellow"
+	| "blue"
+	| "pink"
+	| "orange"
+	| "red"
+	| "green"
+	| "olive"
+	| "cyan"
+	| "purple"
+	| "gray";
 
 interface UnearthedSettings {
 	unearthedApiKey: string;
@@ -32,19 +42,25 @@ interface UnearthedSettings {
 	customColors: Record<ColorKey, string>;
 }
 
-const QUOTE_TEMPLATE_EXAMPLE = `
----
-> {{content}}
+const SOURCE_TEMPLATE = `---
+title: {{title}}
+subtitle: {{subtitle}}
+author: "[[{{author}}]]"
+type: {{type}}
+origin: {{origin}}
+asin: {{asin}}
+tags: {{type}},{{origin}}
+---\n\n`;
+
+const QUOTE_TEMPLATE_EXAMPLE = `#### {{content}}
 
 **Note:** {{note}}
 **Location:** {{location}}
 **Color:** {{color}}
 `;
 
-const DAILY_REFLECTION_TEMPLATE_EXAMPLE = `
-## Daily Reflection
-
-> {{quote}}
+const DAILY_REFLECTION_TEMPLATE_EXAMPLE = `\n## Daily Reflection\n
+{{quote}}
 
 **{{type}}:** [[{{source}}]]
 **Author:** [[{{author}}]]
@@ -69,11 +85,39 @@ const sourceIdToFileName = new Map<string, string>();
 
 const HIDDEN_CHAR = "\u200B";
 
+function hexToRgba(hex: string, alpha = 1) {
+	hex = hex.replace(/^#/, "");
+	if (hex.length === 3) {
+		hex = hex
+			.split("")
+			.map((x) => x + x)
+			.join("");
+	}
+	const num = parseInt(hex, 16);
+	const r = (num >> 16) & 255;
+	const g = (num >> 8) & 255;
+	const b = num & 255;
+	return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function normalizeColor(color: string) {
+	if (!color) return "";
+	let c = color.trim().toLowerCase();
+	if (c === "grey") c = "gray";
+	return c;
+}
+
 const DEFAULT_COLOR_MAP: Record<string, string> = {
 	yellow: "#ffd700",
 	blue: "#4682b4",
 	pink: "#ff69b4",
 	orange: "#ffa500",
+	red: "#ff0000",
+	green: "#008000",
+	olive: "#808000",
+	cyan: "#00ffff",
+	purple: "#800080",
+	gray: "#808080",
 };
 
 const DEFAULT_SETTINGS: UnearthedSettings = {
@@ -97,6 +141,12 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 		blue: DEFAULT_COLOR_MAP.blue,
 		pink: DEFAULT_COLOR_MAP.pink,
 		orange: DEFAULT_COLOR_MAP.orange,
+		red: DEFAULT_COLOR_MAP.red,
+		green: DEFAULT_COLOR_MAP.green,
+		olive: DEFAULT_COLOR_MAP.olive,
+		cyan: DEFAULT_COLOR_MAP.cyan,
+		purple: DEFAULT_COLOR_MAP.purple,
+		gray: DEFAULT_COLOR_MAP.gray,
 	},
 };
 
@@ -390,40 +440,61 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 			item.author
 		}]]\n\n**Source:** ${firstLetterUppercase(item.origin)}\n\n`;
 
+		let keyExists = false;
 		if (plugin.settings.sourceTemplate) {
 			fileContent =
 				SOURCE_TEMPLATE_OPTIONS.reduce((acc, key) => {
-					const value = item[key as keyof UnearthedData] ?? "";
-					const stringValue =
-						typeof value === "string" ? value : String(value);
+					if (plugin.settings.sourceTemplate.includes(`{{${key}}}`)) {
+						keyExists = true;
 
-					if (key.startsWith("createdAt")) {
-						const createdAtValues = acc.match(
-							/{{createdAt(\w*|\|date:\w*-\w*-\w*)}}/g
-						);
+						const value = item[key as keyof UnearthedData] ?? "";
+						const stringValue =
+							typeof value === "string" ? value : String(value);
 
-						if (createdAtValues) {
-							for (const template of createdAtValues) {
-								if (template.includes("|date:")) {
-									const format =
-										template.match(/\|date:(.+?)}}/)?.[1];
-									const formattedDate = window
-										.moment(stringValue)
-										.format(format);
-									acc = acc.replace(template, formattedDate);
-								} else {
-									acc = acc.replace(template, stringValue);
+						if (key.startsWith("createdAt")) {
+							const createdAtValues = acc.match(
+								/{{createdAt(\w*|\|date:\w*-\w*-\w*)}}/g
+							);
+
+							if (createdAtValues) {
+								for (const template of createdAtValues) {
+									if (template.includes("|date:")) {
+										const format =
+											template.match(
+												/\|date:(.+?)}}/
+											)?.[1];
+										const formattedDate = window
+											.moment(stringValue)
+											.format(format);
+										acc = acc.replace(
+											template,
+											formattedDate
+										);
+									} else {
+										acc = acc.replace(
+											template,
+											stringValue
+										);
+									}
 								}
 							}
 							return acc;
+						} else {
+							console.log("REPLACE key", key);
+							const toReturn = acc.replace(
+								new RegExp(`{{${key}}}`, "g"),
+								stringValue
+							);
+							console.log("toReturn", toReturn);
+							return toReturn;
 						}
-					} else {
-						return acc.replace(
-							new RegExp(`{{${key}}}`, "g"),
-							stringValue
-						);
 					}
+					return acc;
 				}, plugin.settings.sourceTemplate) ?? "";
+		}
+
+		if (plugin.settings.sourceTemplate && !keyExists) {
+			fileContent = `${plugin.settings.sourceTemplate}`;
 		}
 
 		let existingQuotes: string[] = [];
@@ -465,16 +536,27 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 						plugin.settings.quoteColorMode !== "none" &&
 						quote.color
 					) {
-						const colorLower = quote.color.toLowerCase();
+						const colorLower = normalizeColor(quote.color);
 						let colorHex = "";
+						const colorKeys = [
+							"yellow",
+							"blue",
+							"pink",
+							"orange",
+							"red",
+							"green",
+							"olive",
+							"cyan",
+							"purple",
+							"gray",
+						];
 
-						for (const colorKey of Object.keys(
-							DEFAULT_COLOR_MAP
-						) as ColorKey[]) {
+						for (const colorKey of colorKeys) {
 							if (colorLower.includes(colorKey)) {
 								colorHex =
-									plugin.settings.customColors[colorKey] ||
-									DEFAULT_COLOR_MAP[colorKey];
+									plugin.settings.customColors[
+										colorKey as ColorKey
+									] || DEFAULT_COLOR_MAP[colorKey];
 								break;
 							}
 						}
@@ -483,7 +565,8 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 							if (
 								plugin.settings.quoteColorMode === "background"
 							) {
-								styledContent = `<div style="background-color: ${colorHex}; padding: 12px;">${hiddenContent}</div>`;
+								const colorRgba0 = hexToRgba(colorHex, 0.5);
+								styledContent = `<div style="background: linear-gradient(to right, ${colorHex} 0%, ${colorRgba0} 100%); color: #fff; padding: 24px 28px; border-radius: 18px; box-shadow: 0 4px 18px rgba(33,140,228,0.12), 0 1.5px 4px rgba(0,0,0,0.08); font-size: 1.15rem; letter-spacing: 0.01em; line-height: 1.6;">${hiddenContent}</div>`;
 							} else if (
 								plugin.settings.quoteColorMode === "text"
 							) {
@@ -528,16 +611,27 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 						plugin.settings.quoteColorMode !== "none" &&
 						quote.color
 					) {
-						const colorLower = quote.color.toLowerCase();
+						const colorLower = normalizeColor(quote.color);
 						let colorHex = "";
+						const colorKeys = [
+							"yellow",
+							"blue",
+							"pink",
+							"orange",
+							"red",
+							"green",
+							"olive",
+							"cyan",
+							"purple",
+							"gray",
+						];
 
-						for (const colorKey of Object.keys(
-							DEFAULT_COLOR_MAP
-						) as ColorKey[]) {
+						for (const colorKey of colorKeys) {
 							if (colorLower.includes(colorKey)) {
 								colorHex =
-									plugin.settings.customColors[colorKey] ||
-									DEFAULT_COLOR_MAP[colorKey];
+									plugin.settings.customColors[
+										colorKey as ColorKey
+									] || DEFAULT_COLOR_MAP[colorKey];
 								break;
 							}
 						}
@@ -546,7 +640,8 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 							if (
 								plugin.settings.quoteColorMode === "background"
 							) {
-								styledContent = `> <div style="background-color: ${colorHex}; padding: 12px;">${quote.content}</div>`;
+								const colorRgba0 = hexToRgba(colorHex, 0.5);
+								styledContent = `> <div style="background: linear-gradient(to right, ${colorHex} 0%, ${colorRgba0} 100%); color: #fff; padding: 24px 28px; border-radius: 18px; box-shadow: 0 4px 18px rgba(33,140,228,0.12), 0 1.5px 4px rgba(0,0,0,0.08); font-size: 1.15rem; letter-spacing: 0.01em; line-height: 1.6;">${quote.content}</div>`;
 							} else if (
 								plugin.settings.quoteColorMode === "text"
 							) {
@@ -829,13 +924,25 @@ async function appendToDailyNote(
 	let styledQuote = reflection.quote;
 
 	if (plugin.settings.quoteColorMode !== "none" && reflection.color) {
-		const colorLower = reflection.color.toLowerCase();
+		const colorLower = normalizeColor(reflection.color);
 		let colorHex = "";
+		const colorKeys = [
+			"yellow",
+			"blue",
+			"pink",
+			"orange",
+			"red",
+			"green",
+			"olive",
+			"cyan",
+			"purple",
+			"gray",
+		];
 
-		for (const colorKey of Object.keys(DEFAULT_COLOR_MAP) as ColorKey[]) {
+		for (const colorKey of colorKeys) {
 			if (colorLower.includes(colorKey)) {
 				colorHex =
-					plugin.settings.customColors[colorKey] ||
+					plugin.settings.customColors[colorKey as ColorKey] ||
 					DEFAULT_COLOR_MAP[colorKey];
 				break;
 			}
@@ -843,7 +950,8 @@ async function appendToDailyNote(
 
 		if (colorHex) {
 			if (plugin.settings.quoteColorMode === "background") {
-				styledQuote = `<div style="background-color: ${colorHex}; padding: 12px;">${reflection.quote}</div>`;
+				const colorRgba0 = hexToRgba(colorHex, 0.5);
+				styledQuote = `<div style="background: linear-gradient(to right, ${colorHex} 0%, ${colorRgba0} 100%); color: #fff; padding: 24px 28px; border-radius: 18px; box-shadow: 0 4px 18px rgba(33,140,228,0.12), 0 1.5px 4px rgba(0,0,0,0.08); font-size: 1.15rem; letter-spacing: 0.01em; line-height: 1.6;">${reflection.quote}</div>`;
 			} else if (plugin.settings.quoteColorMode === "text") {
 				styledQuote = `<span style="color: ${colorHex};">${reflection.quote}</span>`;
 			}
@@ -1302,7 +1410,18 @@ class UnearthedSettingTab extends PluginSettingTab {
 			.setName("Custom highlight colors")
 			.setDesc("Customize the colors used for each highlight type");
 
-		const colorNames: ColorKey[] = ["yellow", "blue", "pink", "orange"];
+		const colorNames: ColorKey[] = [
+			"yellow",
+			"blue",
+			"pink",
+			"orange",
+			"red",
+			"green",
+			"olive",
+			"cyan",
+			"purple",
+			"gray",
+		];
 		for (const colorName of colorNames) {
 			new Setting(containerEl)
 				.setName(
@@ -1343,6 +1462,49 @@ class UnearthedSettingTab extends PluginSettingTab {
 				this.plugin.settings.lastSyncDate
 					? this.plugin.settings.lastSyncDate
 					: "Never"
+			);
+
+		new Setting(containerEl)
+			.setName("Reset settings")
+			.setDesc(
+				"Reset all Unearthed settings back to their default values"
+			)
+			.addButton((button) =>
+				button
+					.setButtonText("Reset to defaults")
+					.setWarning()
+					.onClick(async () => {
+						// Preserve API credentials and last sync date
+						const preservedApiKey =
+							this.plugin.settings.unearthedApiKey;
+						const preservedUserId =
+							this.plugin.settings.unearthedUserId;
+						const preservedLastSyncDate =
+							this.plugin.settings.lastSyncDate;
+
+						// Reset to default settings
+						this.plugin.settings = Object.assign(
+							{},
+							DEFAULT_SETTINGS
+						);
+
+						// Set template defaults
+						this.plugin.settings.sourceTemplate = SOURCE_TEMPLATE;
+						this.plugin.settings.quoteTemplate =
+							QUOTE_TEMPLATE_EXAMPLE;
+						this.plugin.settings.dailyReflectionTemplate =
+							DAILY_REFLECTION_TEMPLATE_EXAMPLE;
+
+						// Restore preserved values
+						this.plugin.settings.unearthedApiKey = preservedApiKey;
+						this.plugin.settings.unearthedUserId = preservedUserId;
+						this.plugin.settings.lastSyncDate =
+							preservedLastSyncDate;
+
+						await this.plugin.saveSettings();
+						this.display(); // Refresh the settings display
+						new Notice("Settings have been reset to defaults");
+					})
 			);
 	}
 }

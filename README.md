@@ -44,6 +44,16 @@ _Beginning and ending the 'Source(book) template' with '---', will result in the
 ![image](https://github.com/user-attachments/assets/036e3adf-05cb-4842-b111-3305137cfa68)
 
 ### Custom Colours
+ - yellow
+ - blue
+ - pink
+ - orange
+ - red
+ - green
+ - olive
+ - cyan
+ - purple
+ - gray
 
 ![image](https://github.com/user-attachments/assets/b36b1082-5784-4e75-9c0d-517b83c08816)
 
@@ -60,8 +70,10 @@ _Beginning and ending the 'Source(book) template' with '---', will result in the
 1. Create an account on [unearthed.app](https://unearthed.app).
 2. Follow the prompts to sync your Kindle data to Unearthed (this step requires installing a browser extension and creating an Unearthed API key). The browser extension will be linked within unearthed.app, but here are the links again: [Chrome](https://chromewebstore.google.com/detail/unearthed-app/aneeklbnnklhdaipicoakebmbedcgmfb), [Firefox](https://addons.mozilla.org/en-US/firefox/addon/unearthed-app/?utm_source=addons.mozilla.org&utm_medium=referral&utm_content=search)
 3. Once you see that Unearthed is receiving books from Kindle, install the Unearthed plugin in your Obsidian vault.
-4. Open the plugin settings in Obsidian and paste in another Unearthed API key, then press "Sync."
-5. You can set it to auto-sync each time Obsidian loads, or choose to sync manually from the side panel or the plugin settings.
+4. Create another Unearthed API key within Unearthed.app and paste it into 'Unearthed API key' in the plugin settings.
+5. Get your 'User Id' from the Unearthed.app settings page and paste it into 'Unearthed User ID' in the plugin settings.
+6. Press the "Sync" button next to 'Manual sync'
+7. You can set it to auto-sync each time Obsidian loads, or choose to sync manually from the side panel or the plugin settings.
 
 ## How to Sync Your KOReader Books with Obsidian
 
