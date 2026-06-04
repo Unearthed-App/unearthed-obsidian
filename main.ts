@@ -40,6 +40,7 @@ interface UnearthedSettings {
 	rootFolder: string;
 	quoteColorMode: QuoteColorMode;
 	customColors: Record<ColorKey, string>;
+	tagMode: "files" | "properties";
 }
 
 const SOURCE_TEMPLATE = `---
@@ -136,6 +137,7 @@ const DEFAULT_SETTINGS: UnearthedSettings = {
 	dailyReflectionTemplate: "",
 	rootFolder: "Unearthed",
 	quoteColorMode: "background",
+	tagMode: "files",
 	customColors: {
 		yellow: DEFAULT_COLOR_MAP.yellow,
 		blue: DEFAULT_COLOR_MAP.blue,
@@ -530,7 +532,10 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 
 				const hiddenContent = `${HIDDEN_CHAR}${quote.content}${HIDDEN_CHAR}`;
 
-				if (!existingQuotes.includes(quote.content)) {
+				const normalizedQuote =
+					normalizeQuoteForComparison(quote.content);
+
+				if (!existingQuotes.includes(normalizedQuote)) {
 					let styledContent = hiddenContent;
 					if (
 						plugin.settings.quoteColorMode !== "none" &&
@@ -604,7 +609,10 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 			}
 		} else {
 			for (const quote of item.quotes) {
-				if (!existingQuotes.includes(quote.content)) {
+				const normalizedQuote =
+					normalizeQuoteForComparison(quote.content);
+
+				if (!existingQuotes.includes(normalizedQuote)) {
 					let styledContent = `> ${quote.content}`;
 
 					if (
@@ -677,7 +685,7 @@ async function applyData(plugin: Unearthed, data: UnearthedData[]) {
 	}
 }
 
-async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
+async function applyTagsAsFiles(plugin: Unearthed, data: UnearthedTagData[]) {
 	const parentFolderPath = `${plugin.settings.rootFolder}/Tags/`;
 
 	try {
@@ -828,6 +836,75 @@ async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
 	}
 }
 
+async function applyTagsAsProperties(plugin: Unearthed, data: UnearthedTagData[]) {
+	const rootPath = `${plugin.settings.rootFolder}/`;
+
+	let subFolders: { folders: string[]; files: string[] };
+	try {
+		subFolders = await plugin.app.vault.adapter.list(rootPath);
+	} catch {
+		return;
+	}
+
+	const tagsFolderSuffix = "/Tags";
+
+	for (let i = 0; i < data.length; i++) {
+		const tag = data[i];
+
+		if (i % 3 === 0) {
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+
+		if (!tag.sourceIds || tag.sourceIds.length === 0) continue;
+
+		for (const sourceId of tag.sourceIds) {
+			const fileName = sourceIdToFileName.get(sourceId);
+			if (!fileName) continue;
+
+			for (const folder of subFolders.folders) {
+				if (folder.endsWith(tagsFolderSuffix)) continue;
+
+				const filePath = `${folder}/${fileName}.md`;
+				const abstractFile =
+					plugin.app.vault.getAbstractFileByPath(filePath);
+
+				if (abstractFile instanceof TFile) {
+					await plugin.app.fileManager.processFrontMatter(
+						abstractFile,
+						(frontmatter) => {
+							let existingTags: string[] = [];
+							if (Array.isArray(frontmatter.tags)) {
+								existingTags = frontmatter.tags;
+							} else if (typeof frontmatter.tags === "string") {
+								existingTags = frontmatter.tags
+									.split(",")
+									.map((t: string) => t.trim())
+									.filter(Boolean);
+							}
+							const tagTitle = tag.title
+							.replace(/\s+/g, "-")
+							.replace(/[^a-zA-Z0-9_\-/]/g, "");
+							if (!existingTags.includes(tagTitle)) {
+								existingTags.push(tagTitle);
+								frontmatter.tags = existingTags;
+							}
+						}
+					);
+					break;
+				}
+			}
+		}
+	}
+}
+
+async function applyTags(plugin: Unearthed, data: UnearthedTagData[]) {
+	if (plugin.settings.tagMode === "properties") {
+		await applyTagsAsProperties(plugin, data);
+	} else {
+		await applyTagsAsFiles(plugin, data);
+	}
+}
+
 async function listFolders(plugin: Unearthed) {
 	const folders = await plugin.app.vault.adapter.list(
 		`${plugin.settings.rootFolder}/`
@@ -908,6 +985,26 @@ async function appendToDailyNote(
 	filePath: string,
 	reflection: DailyReflection
 ) {
+	// Ensure parent directories exist (supports date formats with slashes like YYYY/MM-MMMM/YYYY-MM-DD-dddd)
+	const lastSlash = filePath.lastIndexOf("/");
+	if (lastSlash > 0) {
+		const parentFolder = filePath.substring(0, lastSlash);
+		const parts = parentFolder.split("/");
+		let currentPath = "";
+		for (const part of parts) {
+			currentPath = currentPath ? `${currentPath}/${part}` : part;
+			try {
+				const existing =
+					plugin.app.vault.getAbstractFileByPath(currentPath);
+				if (!existing || !(existing instanceof TFolder)) {
+					await plugin.app.vault.createFolder(currentPath);
+				}
+			} catch (error) {
+				// Folder already exists or cannot be created
+			}
+		}
+	}
+
 	const file = plugin.app.vault.getAbstractFileByPath(filePath);
 	let content = "";
 
@@ -1075,12 +1172,20 @@ async function fetchDailyReflection(plugin: Unearthed) {
 	} as DailyReflection;
 }
 
+function normalizeQuoteForComparison(quote: string): string {
+	return quote
+		.replace(new RegExp(HIDDEN_CHAR, "g"), "")
+		.replace(/<[^>]*>/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
 function extractExistingQuotes(fileContent: string): string[] {
 	const quoteRegex = />\s(.+?)\n/g;
 	const quotes = [];
 	let match;
 	while ((match = quoteRegex.exec(fileContent)) !== null) {
-		quotes.push(match[1].trim());
+		quotes.push(normalizeQuoteForComparison(match[1]));
 	}
 	return quotes;
 }
@@ -1091,7 +1196,7 @@ function extractExistingQuotesUsingTemplate(fileContent: string): string[] {
 	let match;
 
 	while ((match = quoteRegex.exec(fileContent)) !== null) {
-		const quote = match[1].trim();
+		const quote = normalizeQuoteForComparison(match[1]);
 		quotes.push(quote);
 	}
 
@@ -1225,6 +1330,24 @@ class UnearthedSettingTab extends PluginSettingTab {
 					await getAndAppendDailyReflection(this.plugin);
 					new Notice("Complete - check your daily note");
 				})
+			);
+
+		new Setting(containerEl)
+			.setName("Tag mode")
+			.setDesc(
+				"How tags are applied to your sources. 'Tag files' creates a separate note per tag with links to sources. 'Tag properties' adds tags directly to the source file's frontmatter."
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("files", "Tag files")
+					.addOption("properties", "Tag properties")
+					.setValue(this.plugin.settings.tagMode)
+					.onChange(async (value) => {
+						this.plugin.settings.tagMode = value as
+							| "files"
+							| "properties";
+						await this.plugin.saveSettings();
+					})
 			);
 
 		new Setting(containerEl)

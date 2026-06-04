@@ -1,6 +1,8 @@
 # Unearthed Obsidian Plugin (Kindle/KOReader Sync)
 
 > **Wait**: there is an alternative way to sync with Unearthed and that is through **[Unearthed Local](https://unearthed.app/local)** which is an app that you install on your device, where there is no cloud required. Once you have it you can keep it forever. For the Unearthed Local app, you do **not** need to use this Obsidian Plugin.
+>
+> **Unearthed Local also has a companion mobile app** — **[Unearthed Mobile](https://unearthed.app/mobile)** — so you can access your highlights on the go, right alongside your local setup.
 > 
 Unearthed is a service that seamlessly syncs your Kindle (& KOReader) highlights and notes to your preferred platforms.
 A **Daily Reflection** is served to you that consists of a quote, your note, book, author and location. This plugin allows you to use custom templates to determine how books will appear in Obsidian. It is smart enough to know what quotes/highlights exist already and just append those that are needed.
@@ -14,6 +16,7 @@ Currently, Unearthed supports receiving books from:
 and sending books to:
 
 -   **Obsidian** (via this plugin) (or [Unearthed Local](https://unearthed.app/local))
+-   **Mobile** (via [Unearthed Mobile](https://unearthed.app/mobile) — companion app for Unearthed Local)
 -   **Notion**
 -   **Capacities**
 -   **Supernotes**
@@ -28,7 +31,13 @@ Highlights and notes made in the KOReader app can now also be sent to Unearthed,
 
 ## Tags
 
-Unearthed.app (Unearthed Online) has a comprehensive solution for tagging highlights and notes. You can do this manually (and quickly via inline highlighting text) or you can let AI help you tag and extract ideas. Within unearthed.app you will be able to see a graph view of all of your books, highlights, and tags connected together. These tags will be sent to your Obsidian vault as well, allowing you to connect your ideas together and keep them offline. Tag files will automatically be created in Obsidian and linked to your books.
+Unearthed.app (Unearthed Online) has a comprehensive solution for tagging highlights and notes. You can do this manually (and quickly via inline highlighting text) or you can let AI help you tag and extract ideas. Within unearthed.app you will be able to see a graph view of all of your books, highlights, and tags connected together. These tags will be sent to your Obsidian vault as well, allowing you to connect your ideas together and keep them offline.
+
+You can choose how tags are applied in **Plugin Settings → Tag mode**:
+
+- **Tag files** (default) — Creates a separate note per tag inside `Tags/` with wiki links back to each source file.
+- **Tag properties** — Adds tags directly to each source file's frontmatter as Obsidian tags.
+
 ![image](https://github.com/user-attachments/assets/15ce1a8d-3032-4f32-b4e4-61c9befd1464)
 ![image](https://github.com/user-attachments/assets/06e1332a-9196-4781-95d7-5b3b1a688efa)
 
@@ -68,7 +77,7 @@ _Beginning and ending the 'Source(book) template' with '---', will result in the
 
 ## How to Sync Your Kindle Books with Obsidian
 
-1. Choose if you'd prefer to bypass this plugin entirely and install the completely local app instead ([Unearthed Local](https://unearthed.app/local)). Compare them here: [unearthed.app](https://unearthed.app)
+1. Choose if you'd prefer to bypass this plugin entirely and install the completely local app instead ([Unearthed Local](https://unearthed.app/local)), which also has a companion mobile app ([Unearthed Mobile](https://unearthed.app/mobile)). Compare them here: [unearthed.app](https://unearthed.app)
 2. If you've chosen to continue with [Unearthed Online](https://unearthed.app/online), create an account on [unearthed.app](https://unearthed.app).
 3. Follow the prompts to sync your Kindle data to Unearthed (this step requires installing a browser extension and creating an Unearthed API key). The browser extension will be linked within unearthed.app, but here are the links again: [Chrome](https://chromewebstore.google.com/detail/unearthed-app/aneeklbnnklhdaipicoakebmbedcgmfb), [Firefox](https://addons.mozilla.org/en-US/firefox/addon/unearthed-app/?utm_source=addons.mozilla.org&utm_medium=referral&utm_content=search)
 4. Once you see that Unearthed is receiving books from Kindle, install the Unearthed plugin in your Obsidian vault.
