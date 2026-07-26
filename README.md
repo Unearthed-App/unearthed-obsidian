@@ -1,4 +1,4 @@
-# Unearthed Obsidian Plugin (Kindle/KOReader Sync)
+# Unearthed (Kindle and KOReader Sync)
 
 > **Wait**: there is an alternative way to sync with Unearthed and that is through **[Unearthed Local](https://unearthed.app/local)** which is an app that you install on your device, where there is no cloud required. Once you have it you can keep it forever. For the Unearthed Local app, you do **not** need to use this Obsidian Plugin.
 >

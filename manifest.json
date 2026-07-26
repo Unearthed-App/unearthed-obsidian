@@ -1,9 +1,9 @@
 {
 	"id": "unearthed-app",
-	"name": "Unearthed (Kindle & KOReader Sync)",
-	"version": "1.6.0",
+	"name": "Unearthed (Kindle and KOReader Sync)",
+	"version": "1.6.1",
 	"minAppVersion": "0.15.0",
-	"description": "Auto Sync Kindle/KOReader Highlights and Daily Reflection via Unearthed",
+	"description": "Auto Sync Kindle and KOReader highlights and daily reflections via Unearthed.",
 	"author": "CheersCal",
 	"authorUrl": "https://github.com/cheerscal",
 	"fundingUrl": "https://unearthed.app",
